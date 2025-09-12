@@ -14,7 +14,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import precision_recall_curve
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 # Para embeddings
 from sentence_transformers import SentenceTransformer
