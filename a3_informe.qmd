@@ -1,0 +1,390 @@
+---
+title: "Metodología empleada para la resolución de la Tarea A3 'Vías sin código de vía INE'"
+jupyter: python3
+
+author:
+  - name: "*Enrique Reñé Sánchez (Técnico SIG)*"
+    affiliations: 
+      - ref: grafcan
+  - name: "*Cristian González Alonso (Ingeniero de datos)*"
+  - name: "*Juan Jorge Rosales León (Dirección técnica)*"
+
+affiliations:
+  - id: grafcan
+    name: "![GRAFCAN Logo](mapas/GRAFCANa_logo_color.png){width=1in}"
+
+project: "Tenerife Padrón 2.0 (Cabildo Tenerife) - Padrón Online (INE)"
+
+date: "2025-09-15"
+date-format: long
+nocite: |
+  @*
+  
+title-block-banner: "mapas/FONDO_IT_1.png"
+
+format:
+  html:
+    html-table-processing: none
+    css: styles.css
+    code-fold: true
+    toc: true
+    toc-title: Tabla de contenidos
+    toc-location: left
+    toc-expand: 3
+    toc-depth: 4
+    number-sections: true
+    number-depth: 4
+    page-layout: full
+    embed-resources: false
+    editor: visual
+
+crossref:
+  fig-title: 'Figura'
+  fig-prefix: 'figura'
+  tbl-title: 'Tabla'
+  tbl-prefix: 'tabla'
+  sec-prefix: 'apartado'
+---
+
+```{python}
+#| echo: false
+import yaml
+from IPython.display import display, HTML
+
+# Leer YAML del archivo (solo la cabecera)
+with open(r"C:\padron\data\vscode\padron_online\A1\a1_informe.qmd", "r", encoding="utf-8") as f:
+    lines = f.readlines()
+
+start = lines.index('---\n') + 1
+end = lines.index('---\n', start)
+yaml_text = "".join(lines[start:end])
+header = yaml.safe_load(yaml_text)
+
+# Crear un bloque HTML tipo tarjeta con Bootstrap
+display(HTML(f'''
+<div class="card mb-3" style="padding:10px; background-color:#f8f9fa; border-left: 5px solid #09488bff;">
+  <strong>Proyecto:</strong> {header.get('project','')}
+</div>
+'''))
+```
+
+Mediante la Orden TER/1235/2023 (E2025001009), el Cabildo de Tenerife encarga a Cartográfica de Canarias S.A. (GRAFCAN) la ejecución de tareas de análisis y depuración del padrón de municipios de menos de 20.000 habitantes, en el marco del proyecto *TenerifePadrón 2.0*, encuadrado a su vez en la iniciativa *Padrón Online* del INE.
+
+# Resumen {#sec-resumen}
+
+Este documento describe la metodología empleada para la resolución de la Tarea A3 ('Registros del fichero de Viviendas sin código de vía INE'), que consiste en la asignación de código de vía en formato INE (cvia_ine) para aquellas viviendas no principales cuya vía catastral no se ha podido identificar en el callejero del censo electoral. 
+
+La aproximación se centra en la asignación de 'cvia_ine' mediante ubicación espacial 
+
+y búsqueda de emparejamientos mediante dirección para los ficheros proporcionados por el INE. Tras un emparejamiento exitoso, se realiza la asignación de CIV para el hogar de acuerdo con el procedimiento dispuesto en la [Guía Técnica de Subvenciones](mapas/Guia_Tecnica_de_Subvenciones.pdf){target="_blank"}.
+
+Dada la inexistencia de un mecanismo de emparejamiento unívoco, la variedad en los formatos de nomenclatura y la incompletitud de las descripciones hasta nivel de inmueble, se ha optado por emplear distintos métodos de emparejamiento basados en coincidencia exacta y coincidencia difusa (aplicando primero los más conservadores y optimizando los menos restrictivos para minimizar los falsos positivos), para las direcciones hasta nivel de parcela.
+
+Los resultados reflejan un **82,25% de asignación** a nivel global tras la comparación con todas las fuentes de datos (asumiendo cierto margen de error para los registros procedentes de coincidencia difusa, si bien se ha trabajado en minimizarlo). Para aquellos registros que forman parte del **residuo (17,75%)**, con correspondiente nueva alta de CIV, se realizó una revisión exhaustiva de los motivos de no asignación, entre los que destacan la falta de descripciones completas en el fichero origen o las fuentes comparadas.
+
+El desarrollo y resultados de los trabajos se plasman en el presente informe, así como en el [atlas](mapas/Atlas_v2.pdf){target="_blank"} que muestra la distribución espacial de los hogares y estadísticos más relevantes para cada municipio.
+
+## Información de partida y análisis inicial
+
+La información proporcionada por el INE es la siguiente:
+
+-   *Registros del fichero de hogares sin CIV (HSppmmml.023).*
+
+Inicialmente, con el fin de recuperar la referencia catastral a 20 dígitos (RC20) desde el fichero de viviendas, se buscó emparejar la dirección **hasta nivel de inmueble**. Sin embargo, debido a la incompletitud de los campos de dirección y la falta de información suficiente en muchos registros, el **nivel de emparejamiento conseguido fue muy bajo**.
+
+Por este motivo, se descartó esta vía y se optó por realizar el emparejamiento **hasta nivel de portal**, lo que garantiza una mayor cobertura de los hogares aunque con menor detalle. De este modo, la asignación de CIV se realizó a partir de la referencia catastral a 14 dígitos (RC14), lo que **implica la incapacidad de asociar la figura del hogar al inmueble.**
+
+## Fuentes de datos empleadas
+
+Si bien la búsqueda se realizó primero contra el fichero de viviendas como fuente preferente para la asignación de CIV, dado que esta solo recupera alrededor del 27% de registros, se buscaron las direcciones de los hogares del fichero HS contra las siguientes fuentes complementarias:
+
+-   **Catastro**: ficheros CAT (alfanumérico) y cartografía vectorial (gráfico) con información de fincas, unidades constructivas e inmuebles urbanos y rústicos.
+-   **Callejero del SITCAN** (Sistema de Información Territorial de Canarias): gestionado y mantenido por GRAFCAN, constituye la base oficial de referencia para la red viaria de Canarias.
+
+
+# Flujo metodológico
+
+La asignación de CIV a cada hogar se desarrolla en una secuencia de etapas, resumidas a continuación para proporcionar una visión global del proceso:
+
+1.  **Preparación del entorno:**
+
+    -   Importación de librerías para manejo de datos (`pandas`, `geopandas`, `sqlalchemy`), geoprocesamiento (`shapely`), coincidencia difusa (`rapidfuzz`, `sklearn`) y conexión a PostgreSQL/PostGIS.
+
+    -   Definición de diccionarios de normalización: equivalencias oficiales para desabreviación, casos de abreviación detectados manualmente, equivalencias de nombres de calles detectadas manualmente, casos especiales donde se debe incluir información de bloque/portal.
+
+2.  **Normalización**: para mejorar la capacidad de emparejamiento se aplican una serie de funciones de preprocesamiento (conversión a mayúsculas, eliminación de acentos y carácteres especiales, separación de sufijos y prefijos, etc). Dicho proceso se aplica tanto al registro procedente del fichero HS como al de la fuente contra la que se compara.
+
+3.  **Carga de datos**: conexión a la base de datos para obtener los ficheros HS y las fuentes a comparar (viviendas, catastro, callejero SITCAN y cartociudad).
+
+4.  **Emparejamiento**:
+
+    Primero se ha aplicado el método más conservador (coincidencia exacta) y luego aquellos menos restrictivos (coincidencia difusa o fuzzy matching). Este proceso se realiza de forma iterativa cruzando las descripciones contra las fuentes de referencia, repitiendo un esquema similar en cascada. Así pues, primero se intenta completar con VV, y para aquellos registros pendientes de asignación se cruza contra catastro, callejero SITCAN y finalmente CartoCiudad.
+
+    -   **Match exacto**: se busca coincidencia directa entre la dirección normalizada de HS y la fuente. Si coincide se asigna la RC14, las coordenadas, y método-fuente de emparejamiento.
+
+    -   **Fuzzy match**: se busca coincidencia de similitud textual con RapidFuzz + TF-IDF + nearest neighbors. Se valida el match por nivel de similitud (umbral de *score*) y la premisa de coincidencia exacta de código de municipio y portal entre los registros. Si cumple los criterios se asigna RC14, coordenadas y método-fuente de emparejamiento.
+
+        ::: callout-note
+        ## Filtros y umbrales
+
+        Aunque el criterio principal de validación del emparejamiento por cadenas ha sido el *score* de `rapidfuzz`, previamente se aplicó un filtro de preselección basado en *Nearest Neighbors* sobre vectores TF-IDF. Este filtro inicial permite identificar, para cada hogar, la dirección candidata más próxima en el espacio de n-gramas y descartar coincidencias con baja similitud, reduciendo así el riesgo de falsos positivos en la comparación final.
+
+        El umbral de similitud para aceptar emparejamientos varía en cada proceso, y se asigna tras una calibración manual orientada a equilibrar recuperación y reducción de falsos positivos. En general, se sitúa entre el 70 % y el 80 %.
+        :::
+
+5.  **Actualización y exportación**: se actualiza el fichero HS con las nuevas asignaciones y campos completos. Se exportan resultados a archivos excel para revisión manual.
+
+6.  **Métricas de evaluación**: tras cada proceso se reportan el total de hogares de entrada, los asignados en esa fase, el porcentaje de coincidencia exacta o difusa y la asignación acumulada (cobertura total).
+
+7.  **Asignación de CIV**:
+
+    Dado que el detalle al que se resuelve el emparejamiento es a nivel de parcela (y no de inmueble por las motivos expuestos anteriormente), se ha recuperado para cada emparejamiento la RC14:
+
+    -   **Fichero de viviendas**: recuperación directa desde el campo 'CIV' (primeros 14 dígitos).
+
+    -   **Fuente catastro**: recuperación directa desde el campo 'id_parcela_catastral'.
+
+        ::: callout-note
+        ## Generación de puntos
+
+        Tras unir la cartografía vectorial con el fichero alfanumérico CAT, se genera un punto dentro de cada parcela que queda contenido en su superficie. No se utiliza el centroide, ya que en parcelas irregulares o con huecos podría situarse fuera de la geometría, por lo que se calcula un punto ajustado garantizando su ubicación interna.
+        :::
+
+    -   **Fuentes callejero y cartociudad**: dado que el emparejamiento está asociado a un punto de la capa de portales, se recupera la RC14 por la vía espacial mediante cruce con la geometría vectorial de las parcelas catastrales.
+
+    Una vez recuperada la RC14 para aquellos registros con emparejamiento exitoso, se aplica el proceso de generación del CIV a cada hogar de acuerdo con las directrices recogidas en la [Guía Técnica de Subvenciones](mapas/Guia_Tecnica_de_Subvenciones.pdf){target="_blank"} .
+
+8.  **Ficheros de salida**:
+
+    Tras la modificación del fichero HS con los nuevos emparejamientos y la generación de altas de viviendas para aquellos registros sin emparejamiento exitoso, se generan los siguientes archivos de salida de acuerdo con la estructura de datos establecida:
+
+    -   *HSppmmmA.023: registros del fichero de hogares con CIV cumplimentado.*
+
+    -   *VAppmmmA.023: registros del fichero de alta de viviendas con CIV nuevo.*
+
+## Preparación del entorno
+
+```{python}
+#| echo: false
+#| eval: false
+
+
+```
+
+Diccionario de abreviaciones:
+
+```{python}
+#| eval: false
+
+```
+
+Diccionario de vías equivalentes:
+
+```{python}
+#| eval: false
+
+```
+
+Diccionario de direcciones que requieren añadir portal para mejorar su emparejamiento:
+
+```{python}
+#| eval: false
+
+```
+
+## Normalización
+
+Definición de funciones de limpieza y normalización de las descripciones:
+
+```{python}
+#| eval: false
+
+```
+
+```{python}
+#| echo: false
+#| eval: false
+
+```
+
+Aplicación de funciones de normalización:
+
+```{python}
+#| eval: false
+
+```
+
+## Emparejamiento
+
+### HS - VV (match exacto)
+
+```{python}
+#| eval: false
+#| collapse: true
+
+```
+
+### HS - VV (fuzzy match)
+
+```{python}
+#| eval: false
+#| collapse: true
+
+```
+
+### HS - Catastro (match exacto)
+
+```{python}
+#| eval: false
+#| collapse: true
+
+```
+
+### HS - Callejero SITCAN (match exacto por código de vía)
+
+```{python}
+#| eval: false
+#| collapse: true
+
+```
+
+### HS - Catastro (fuzzy match)
+
+```{python}
+#| eval: false
+#| collapse: true
+
+```
+
+### HS - Callejero SITCAN (fuzzy match)
+
+```{python}
+#| eval: false
+#| collapse: true
+
+```
+
+### HS - CC (match exacto)
+
+```{python}
+#| eval: false
+#| collapse: true
+
+```
+
+### HS - CC (fuzzy match)
+
+```{python}
+#| eval: false
+#| collapse: true
+
+```
+
+# Resultados
+
+En esta primera aproximación se ha conseguido la asignación del **82,25 %** del total de registros del fichero HS, distribuida de la siguiente manera según su método y fuente de recuperación:
+
+```{python}
+#| echo: false
+
+```
+
+## Distribución por municipio
+
+```{python}
+#| echo: false
+
+```
+
+## Productos cartográficos
+
+A continuación, se muestra la distribución espacial de los hogares asignados a través de una serie de mapas con estadísticos relevantes. Si se desea una visualización más interactiva que permita explorar zonas con más detalle se puede consultar el siguiente [visor](https://erensan-1.github.io/a1_padron_online/a1_hs_recuperados.html#11/28.2966/-16.4777){target="_blank"}, que permite el filtrado por municipio y por fuente - método de asignación.
+
+::: panel-tabset
+### Arafo
+
+![](mapas/Arafo.png){style="max-width:100%; max-height:80vh;"}
+
+### Arico
+
+![](mapas/Arico.png){style="max-width:100%; max-height:80vh;"}
+
+### Buenavista del Norte
+
+![](mapas/Buenavista%20del%20Norte.png){style="max-width:100%; max-height:80vh;"}
+
+### El Rosario
+
+![](mapas/El%20Rosario.png){style="max-width:100%; max-height:80vh;"}
+
+### El Sauzal
+
+![](mapas/El%20Sauzal.png){style="max-width:100%; max-height:80vh;"}
+
+### El Tanque
+
+![](mapas/El%20Tanque.png){style="max-width:100%; max-height:80vh;"}
+
+### Fasnia
+
+![](mapas/Fasnia.png){style="max-width:100%; max-height:80vh;"}
+
+### Garachico
+
+![](mapas/Garachico.png){style="max-width:100%; max-height:80vh;"}
+
+### La Guancha
+
+![](mapas/La%20Guancha.png){style="max-width:100%; max-height:80vh;"}
+
+### La Matanza de Acentejo
+
+![](mapas/La%20Matanza%20de%20Acentejo.png){style="max-width:100%; max-height:80vh;"}
+
+### La Victoria de Acentejo
+
+![](mapas/La%20Victoria%20de%20Acentejo.png){style="max-width:100%; max-height:80vh;"}
+
+### Los Silos
+
+![](mapas/Los%20Silos.png){style="max-width:100%; max-height:80vh;"}
+
+### San Juan de la Rambla
+
+![](mapas/San%20Juan%20de%20la%20Rambla.png){style="max-width:100%; max-height:80vh;"}
+
+### Santiago del Teide
+
+![](mapas/Santiago%20del%20Teide.png){style="max-width:100%; max-height:80vh;"}
+
+### Tegueste
+
+![](mapas/Tegueste.png){style="max-width:100%; max-height:80vh;"}
+
+### Vilaflor
+
+![](mapas/Vilaflor.png){style="max-width:100%; max-height:80vh;"}
+:::
+
+# Análisis del residuo
+
+Tras varios procesos iterativos de revisión manual de casos, ajuste de los umbrales e implementación de mejoras se ha conseguido rebajar el **residuo global hasta el 17,75 %**.
+
+```{python}
+#| echo: false
+
+```
+
+::: callout-note
+## Nota adicional
+
+En relación con los municipios con mayor porcentaje de hogares no asignados, podría observarse un patrón relacionado con la ruralidad y la capacidad administrativa del ente local. Los porcentajes más elevados se concentran principalmente en municipios rurales y con población dispersa, donde las entidades municipales de menor tamaño cuentan con información limitada y menor capacidad para garantizar una cobertura territorial completa.
+:::
+
+Después de una evaluación detallada de las 20 calles con mayor número de registros pendientes (alrededor de 1.000 en total), se identificaron las siguientes casuísticas como las más frecuentes en la no asignación:
+
+-   Direcciones **no recogidas en las fuentes comparadas** ni tampoco identificables mediante vista en Google Maps (Ej: Ctra. General del Norte o Calle Caleta del Jurado 5)
+-   **Hogares en parcelas sin edificar** (Ej: Calle Limeras o urbanización en Calle Llanos del Poris).
+-   **Agrupamientos de viviendas hacinadas** sin portales recogidos en callejeros ni distinguibles a vista de Google Maps (Ej: Playa Barranco Hondo o Lugar Bocacangrejo).
+-   Bloques de viviendas con muchos hogares **sin portal geolocalizado** pero que se comprueba que existen en vista de Google Maps (Ej: Calle Alcalde Juan García Dorta o Calle El Lajial).
+-   Hogares con descripción de calle pero no identificables por numeración incompleta en descripciones de portal como **0000S/999** (Ej: Calle José Gregorio Yanes Dorta o Lugar Bocacangrejo).
