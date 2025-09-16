@@ -72,37 +72,46 @@ Mediante la Orden TER/1235/2023 (E2025001009), el Cabildo de Tenerife encarga a 
 
 # Resumen {#sec-resumen}
 
-Este documento describe la metodología empleada para la resolución de la Tarea A3 ('Registros del fichero de Viviendas sin código de vía INE'), que consiste en la asignación de código de vía en formato INE (cvia_ine) para aquellas viviendas no principales cuya vía catastral no se ha podido identificar en el callejero del censo electoral. 
+Este documento describe la metodología empleada para la resolución de la Tarea A3 ('Registros del fichero de Viviendas sin código de vía INE'), que consiste en la asignación de código de vía en formato INE (cvia_ine en adelante) para aquellas viviendas no principales cuya vía catastral no se ha podido identificar en el callejero del censo electoral.
 
-La aproximación se centra en la asignación de 'cvia_ine' mediante ubicación espacial 
+La aproximación se centra en la asignación de cvia_ine (o código de unidad poblacional en su defecto, tal y como recoge la [Guía Técnica de Subvenciones](mapas/Guia_Tecnica_de_Subvenciones.pdf){target="_blank"}), mediante ubicación espacial de la vivienda y análisis de vecindad con cartografía de portales o vías del callejero de SITCAN, así como cartografía de unidades poblacionales. Además de la asignación de cvia_ine o código de unidad poblacional (UP en adelante), se clasifican los registros de acuerdo a su emparejamiento en base a las descripciones de su dirección.
 
-y búsqueda de emparejamientos mediante dirección para los ficheros proporcionados por el INE. Tras un emparejamiento exitoso, se realiza la asignación de CIV para el hogar de acuerdo con el procedimiento dispuesto en la [Guía Técnica de Subvenciones](mapas/Guia_Tecnica_de_Subvenciones.pdf){target="_blank"}.
+Dada la variedad en los formatos de nomenclatura y la incompletitud de muchas descripciones, se ha optado por emplear métodos de emparejamiento basados en heurística y machine learning para determinar si la dirección de ambas fuentes hace referencia a la misma localización. La utilidad de esto último radica en la capacidad de discernir aquellas vías con nombres alternativos o vías que necesitan darse de alta.
 
-Dada la inexistencia de un mecanismo de emparejamiento unívoco, la variedad en los formatos de nomenclatura y la incompletitud de las descripciones hasta nivel de inmueble, se ha optado por emplear distintos métodos de emparejamiento basados en coincidencia exacta y coincidencia difusa (aplicando primero los más conservadores y optimizando los menos restrictivos para minimizar los falsos positivos), para las direcciones hasta nivel de parcela.
+[Los resultados reflejan un **82,25% de asignación** a nivel global tras la comparación con todas las fuentes de datos (asumiendo cierto margen de error para los registros procedentes de coincidencia difusa, si bien se ha trabajado en minimizarlo). Para aquellos registros que forman parte del **residuo (17,75%)**, con correspondiente nueva alta de CIV, se realizó una revisión exhaustiva de los motivos de no asignación, entre los que destacan la falta de descripciones completas en el fichero origen o las fuentes comparadas.]{.underline}
 
-Los resultados reflejan un **82,25% de asignación** a nivel global tras la comparación con todas las fuentes de datos (asumiendo cierto margen de error para los registros procedentes de coincidencia difusa, si bien se ha trabajado en minimizarlo). Para aquellos registros que forman parte del **residuo (17,75%)**, con correspondiente nueva alta de CIV, se realizó una revisión exhaustiva de los motivos de no asignación, entre los que destacan la falta de descripciones completas en el fichero origen o las fuentes comparadas.
+[El desarrollo y resultados de los trabajos se plasman en el presente informe, así como en el [atlas](mapas/Atlas_v2.pdf){target="_blank"} que muestra la distribución espacial de los hogares y estadísticos más relevantes para cada municipio.]{.underline}
 
-El desarrollo y resultados de los trabajos se plasman en el presente informe, así como en el [atlas](mapas/Atlas_v2.pdf){target="_blank"} que muestra la distribución espacial de los hogares y estadísticos más relevantes para cada municipio.
-
-## Información de partida y análisis inicial
+## Información de partida y análisis exploratorio
 
 La información proporcionada por el INE es la siguiente:
 
--   *Registros del fichero de hogares sin CIV (HSppmmml.023).*
+-   *Registros afectados del fichero de viviendas con dirección catastral (VCppmmml.023)*
 
-Inicialmente, con el fin de recuperar la referencia catastral a 20 dígitos (RC20) desde el fichero de viviendas, se buscó emparejar la dirección **hasta nivel de inmueble**. Sin embargo, debido a la incompletitud de los campos de dirección y la falta de información suficiente en muchos registros, el **nivel de emparejamiento conseguido fue muy bajo**.
+Este fichero contiene un total de 14.723 registros repartidos en 913 vías, la situación de partida por municipios se muestra en la siguiente tabla:
 
-Por este motivo, se descartó esta vía y se optó por realizar el emparejamiento **hasta nivel de portal**, lo que garantiza una mayor cobertura de los hogares aunque con menor detalle. De este modo, la asignación de CIV se realizó a partir de la referencia catastral a 14 dígitos (RC14), lo que **implica la incapacidad de asociar la figura del hogar al inmueble.**
+```{python}
+import pandas as pd
+
+# Cargar Excel
+df = pd.read_excel("a3_diagnostico.xlsx", sheet_name="resumen_municipio")
+
+# Mostrar tabla (Quarto la renderiza bonita)
+df
+```
+
+Por otro lado, analizando las 10 direcciones con más registros, se constata la existencia de direcciones con difícil emparejamiento (aunque cvia_ine asignable por la vía espacial), como son 'PROC. SIMPLIFICADO', 'DS DISEMINADOS' o 'DS DISEMINADO', que suman un total de 919 registros. La suma de todos los registros cuya descripción hace referencia a un diseminado asciende a XXX.
 
 ## Fuentes de datos empleadas
 
-Si bien la búsqueda se realizó primero contra el fichero de viviendas como fuente preferente para la asignación de CIV, dado que esta solo recupera alrededor del 27% de registros, se buscaron las direcciones de los hogares del fichero HS contra las siguientes fuentes complementarias:
+[Si bien la búsqueda se realizó primero contra el fichero de viviendas como fuente preferente para la asignación de CIV, dado que esta solo recupera alrededor del 27% de registros, se buscaron las direcciones de los hogares del fichero HS contra las siguientes fuentes complementarias:]{.underline}
 
--   **Catastro**: ficheros CAT (alfanumérico) y cartografía vectorial (gráfico) con información de fincas, unidades constructivas e inmuebles urbanos y rústicos.
 -   **Callejero del SITCAN** (Sistema de Información Territorial de Canarias): gestionado y mantenido por GRAFCAN, constituye la base oficial de referencia para la red viaria de Canarias.
-
+-   **Poblaciones**: base de datos con información georreferenciada de poblaciones publicada por el Instituto Geográfico Nacional (IGN).
 
 # Flujo metodológico
+
+![](mapas/A3_estado.png){style="max-width:100%; max-height:80vh;"}
 
 La asignación de CIV a cada hogar se desarrolla en una secuencia de etapas, resumidas a continuación para proporcionar una visión global del proceso:
 
@@ -156,11 +165,9 @@ La asignación de CIV a cada hogar se desarrolla en una secuencia de etapas, res
 
 8.  **Ficheros de salida**:
 
-    Tras la modificación del fichero HS con los nuevos emparejamientos y la generación de altas de viviendas para aquellos registros sin emparejamiento exitoso, se generan los siguientes archivos de salida de acuerdo con la estructura de datos establecida:
+    Tras la asignación de cvia_ine o UP a los registros y su marcaje de propuesta para vías de nueva alta a los ayuntamiento, se generan los siguientes archivos de salida de acuerdo con la estructura de datos establecida:
 
-    -   *HSppmmmA.023: registros del fichero de hogares con CIV cumplimentado.*
-
-    -   *VAppmmmA.023: registros del fichero de alta de viviendas con CIV nuevo.*
+    -   *VCppmmmA.023: registros afectados del fichero de viviendas con dirección catastral y código de vía del callejero de censo electoral.*
 
 ## Preparación del entorno
 

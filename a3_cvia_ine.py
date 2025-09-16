@@ -35,12 +35,16 @@ print("Vías cargadas:", len(df_callejero_via))
 df_parcela = gpd.read_postgis("SELECT * FROM catastro.parcela WHERE tipo != 'X'", engine, geom_col='geom', crs='EPSG:4326')
 print("Parcelas cargadas (tipo distinto de 'X'):", len(df_parcela))
 
+df_poblaciones = gpd.read_postgis("SELECT * FROM age.poblaciones", engine, geom_col='geom', crs='EPSG:4326' )
+print("Poblaciones cargadas:", len(df_poblaciones))
+
 # === INICIALIZAR CAMPOS AUXILIARES ===
 df_vc['cvia_ine'] = ''
 df_vc['a3_estado'] = ''
 df_vc['a3_origen'] = ''
 df_vc['a3_metodo'] = ''
 df_vc['a3_uuid'] = ''
+df_vc['cod_pob'] = ''
 df_vc['predict_proba'] = None
 df_vc['direccion_norm_vc'] = ''
 df_vc['direccion_norm_callejero'] = ''
@@ -177,14 +181,14 @@ feature_importances = pd.DataFrame({
 print("\n=== Importancia de las variables ===")
 print(feature_importances)
 
-# Opcional: gráfico de importancia
+'''# Opcional: gráfico de importancia
 import matplotlib.pyplot as plt
 plt.figure(figsize=(10,6))
 plt.barh(feature_importances['feature'], feature_importances['importance'])
 plt.gca().invert_yaxis()  # Mostrar la más importante arriba
 plt.title("Importancia de cada variable en el Random Forest")
 plt.xlabel("Importancia")
-plt.show()
+plt.show()'''
 
 def filtro_heuristico(vc, callejero):
     tsr_set = fuzz.token_set_ratio(vc, callejero)
@@ -203,7 +207,8 @@ def decidir_match(vc, callejero, clf=clf):
     feats = pd.DataFrame([compute_features(vc, callejero)])
     return int(clf.predict(feats)[0])
 
-# === PROCESAR MUNICIPIO POR MUNICIPIO ===
+
+# === PROCESAR MUNICIPIO POR MUNICIPIO === 
 for codmun, nombre in municipios.items():
     print(f"\nProcesando municipio {nombre} ({codmun})...")
     mun_id = int(codmun[-2:])
@@ -212,6 +217,7 @@ for codmun, nombre in municipios.items():
     df_parcela_mun = df_parcela[df_parcela['municipio'].astype(int) == mun_id].copy()
     df_callejero_num_mun = df_callejero_num[df_callejero_num['codmun'].astype(str).str[-2:].astype(int) == mun_id].copy()
     df_callejero_via_mun = df_callejero_via[df_callejero_via['codmun'].astype(str).str[-2:].astype(int) == mun_id].copy()
+    df_poblaciones_mun = df_poblaciones.copy()
 
     if df_vc_mun.empty:
         print("  No hay viviendas para este municipio.")
@@ -229,7 +235,9 @@ for codmun, nombre in municipios.items():
         geom_vc = row['geom']
         df_vc.at[idx, 'direccion_norm_vc'] = row['direccion_norm']
 
+        # ==============================
         # PRIORIDAD 1: PORTALES EN LA PARCELA
+        # ==============================
         if pd.notna(refcat):
             parcela_geom = df_parcela_mun.loc[df_parcela_mun['refcat'] == refcat, 'geom'].iloc[0]
             cn_candidatos = df_callejero_num_mun[df_callejero_num_mun.within(parcela_geom)]
@@ -241,7 +249,7 @@ for codmun, nombre in municipios.items():
             if matches:
                 match_name = matches[0]
                 feats = pd.DataFrame([compute_features(row['direccion_norm'], match_name)])
-                proba = clf.predict_proba(feats)[0][1]  # probabilidad de ser match
+                proba = clf.predict_proba(feats)[0][1]
                 df_vc.at[idx, 'predict_proba'] = proba
 
                 match_label = decidir_match(row['direccion_norm'], match_name, clf)
@@ -251,12 +259,31 @@ for codmun, nombre in municipios.items():
                 df_vc.at[idx, 'cvia_ine'] = codvia
                 df_vc.at[idx, 'a3_origen'] = 'callejero_num'
                 df_vc.at[idx, 'direccion_norm_callejero'] = match_name
-                df_vc.at[idx, 'a3_estado'] = 'Asignada' if match_label == 1 else 'AsignadaViaAlternativa'
                 df_vc.at[idx, 'a3_metodo'] = 'heurística' if filtro_heuristico(row['direccion_norm'], match_name) is not None else 'random_forest'
                 df_vc.at[idx, 'a3_uuid'] = uuid_match
 
-        else:
-            # PRIORIDAD 2: VÍAS CERCANAS
+                if "NONE" in str(row['direccion_norm']) or "NONE" in str(match_name):
+                    df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaViaAlternativa'
+                else:
+                    df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaVia' if match_label == 1 else 'A3_AsignadaViaAlternativa'
+
+                if int(codvia) > 90000:
+                    df_poblaciones_clean = df_poblaciones_mun[['cunn_1','geom']].copy()
+                    poblacion = gpd.sjoin(
+                        gpd.GeoDataFrame([row], geometry='geom', crs=df_vc.crs),
+                        df_poblaciones_clean,
+                        how='left',
+                        predicate='within',
+                        rsuffix='_pob'
+                    )
+                    if not poblacion.empty and pd.notna(poblacion['cunn_1'].iloc[0]):
+                        df_vc.at[idx, 'cod_pob'] = poblacion['cunn_1'].iloc[0]
+                        df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaUnidadPoblacional'
+
+        # ==============================
+        # PRIORIDAD 2: VÍAS CERCANAS
+        # ==============================
+        elif True:
             buffer_geom = geom_vc.buffer(100)
             vias_cercanas = df_callejero_via_mun[df_callejero_via_mun.intersects(buffer_geom)]
             if not vias_cercanas.empty:
@@ -272,34 +299,92 @@ for codmun, nombre in municipios.items():
                     uuid_match = vias_cercanas.loc[vias_cercanas['direccion_norm'] == match_name, 'uuid'].iloc[0]
 
                     df_vc.at[idx, 'cvia_ine'] = codvia
-                    df_vc.at[idx, 'a3_estado'] = 'Asignada' if match_label == 1 else 'AsignadaViaAlternativa'
                     df_vc.at[idx, 'a3_origen'] = 'callejero_via'
                     df_vc.at[idx, 'direccion_norm_callejero'] = match_name
                     df_vc.at[idx, 'a3_metodo'] = 'heurística' if filtro_heuristico(row['direccion_norm'], match_name) is not None else 'random_forest'
                     df_vc.at[idx, 'a3_uuid'] = uuid_match
 
-            else:
-                # PRIORIDAD 3: VIVIENDA AISLADA
-                gdf_row = gpd.GeoDataFrame([row], geometry='geom', crs=df_vc.crs)
-                nearest = gpd.sjoin_nearest(
+                    if "NONE" in str(row['direccion_norm']) or "NONE" in str(match_name):
+                        df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaViaAlternativa'
+                    else:
+                        df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaVia' if match_label == 1 else 'A3_AsignadaViaAlternativa'
+
+                    if int(codvia) > 90000:
+                        df_poblaciones_clean = df_poblaciones_mun[['cunn_1','geom']].copy()
+                        poblacion = gpd.sjoin(
+                            gpd.GeoDataFrame([row], geometry='geom', crs=df_vc.crs),
+                            df_poblaciones_clean,
+                            how='left',
+                            predicate='within',
+                            rsuffix='_pob'
+                        )
+                        if not poblacion.empty and pd.notna(poblacion['cunn_1'].iloc[0]):
+                            df_vc.at[idx, 'cod_pob'] = poblacion['cunn_1'].iloc[0]
+                            df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaUnidadPoblacional'
+
+        # ==============================
+        # PRIORIDAD 3: VIVIENDA AISLADA
+        # ==============================
+        if pd.isna(df_vc.at[idx, 'a3_estado']) or df_vc.at[idx, 'a3_estado'] == '':
+            gdf_row = gpd.GeoDataFrame([row], geometry='geom', crs=df_vc.crs)
+            nearest = gpd.sjoin_nearest(
+                gdf_row,
+                df_callejero_via_mun[['geom','codvia','uuid']],
+                how='left',
+                rsuffix='_right'
+            )
+
+            # Buscar columnas candidatas sin importar sufijo
+            uuid_candidates = [c for c in nearest.columns if c.startswith("uuid")]
+            codvia_candidates = [c for c in nearest.columns if c.startswith("codvia")]
+
+            uuid_col = uuid_candidates[0] if uuid_candidates else None
+            codvia_col = codvia_candidates[0] if codvia_candidates else None
+
+            if not nearest.empty and uuid_col and codvia_col:
+                df_vc.at[idx, 'cvia_ine'] = nearest[codvia_col].iloc[0]
+                df_vc.at[idx, 'a3_uuid'] = nearest[uuid_col].iloc[0]
+
+                # Intentar asignar unidad poblacional
+                df_poblaciones_clean = df_poblaciones_mun[['cunn_1','geom']].copy()
+                poblacion = gpd.sjoin(
                     gdf_row,
-                    df_callejero_via_mun[['geom','codvia','uuid']],
+                    df_poblaciones_clean,
                     how='left',
-                    rsuffix='_right'
+                    predicate='within',
+                    rsuffix='_pob'
                 )
+                if not poblacion.empty and pd.notna(poblacion['cunn_1'].iloc[0]):
+                    df_vc.at[idx, 'cod_pob'] = poblacion['cunn_1'].iloc[0]
+                    df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaUnidadPoblacional'
+                else:
+                    df_vc.at[idx, 'a3_estado'] = 'A3_Aislada'
+            else:
+                df_vc.at[idx, 'a3_estado'] = 'A3_Aislada'
 
-                # Detectar columnas renombradas por sjoin_nearest
-                uuid_col = 'uuid' if 'uuid' in nearest.columns else 'uuid_right' if 'uuid_right' in nearest.columns else 'uuid__right'
-                codvia_col = 'codvia' if 'codvia' in nearest.columns else 'codvia_right' if 'codvia_right' in nearest.columns else 'codvia__right'
+            df_vc.at[idx, 'a3_origen'] = 'callejero_via'
+            df_vc.at[idx, 'direccion_norm_callejero'] = '' if nearest.empty else df_vc.at[idx, 'direccion_norm_callejero']
+            df_vc.at[idx, 'a3_metodo'] = 'random_forest'
 
-                if not nearest.empty:
-                    df_vc.at[idx, 'cvia_ine'] = nearest[codvia_col].iloc[0]
-                    df_vc.at[idx, 'a3_uuid'] = nearest[uuid_col].iloc[0]
+    # ==============================
+    # ASIGNACIÓN UNIVERSAL DE UNIDAD POBLACIONAL
+    # ==============================
+    df_poblaciones_clean = df_poblaciones_mun[['cunn_1', 'geom']].copy()
+    vc_con_pob = gpd.sjoin(
+        df_vc_mun,
+        df_poblaciones_clean,
+        how="left",
+        predicate="within",
+        rsuffix="_pob"
+    )
+    for idx, row in vc_con_pob.iterrows():
+        if pd.notna(row['cunn_1']):
+            df_vc.at[idx, 'cod_pob'] = row['cunn_1']
 
-                df_vc.at[idx, 'a3_estado'] = 'ViviendaAisladaDeViario'
-                df_vc.at[idx, 'a3_origen'] = 'callejero_via'
-                df_vc.at[idx, 'direccion_norm_callejero'] = ''
-                df_vc.at[idx, 'a3_metodo'] = 'random_forest'
+
+
+# Corregir formato de cvia_ine
+df_vc['cvia_ine'] = df_vc['cvia_ine'].apply(lambda x: str(x).zfill(5))
                 
 
 # CORREGIR FORMATO CODVIA
@@ -324,7 +409,13 @@ df_vc.to_csv("a3_asignaciones_vc.csv", index=False)
 
 # RESUMEN
 print("=== RESUMEN DE ASIGNACIONES ===")
-for estado in ['Asignada','AsignadaViaAlternativa','ViviendaAisladaDeViario']:
+estados = [
+    'A3_AsignadaVia',
+    'A3_AsignadaViaAlternativa',
+    'A3_AsignadaUnidadPoblacional',
+    'A3_AsignarViaNueva',
+    'A3_Aislada']
+for estado in estados:
     count = df_vc[df_vc['a3_estado'] == estado].shape[0]
     print(f"{estado}: {count} registros")
 print(f"Total registros procesados: {len(df_vc)}")

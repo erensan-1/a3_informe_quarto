@@ -9,7 +9,7 @@
 <meta name="author" content="Enrique Reñé Sánchez (Técnico SIG)">
 <meta name="author" content="Cristian González Alonso (Ingeniero de datos)">
 <meta name="author" content="Juan Jorge Rosales León (Dirección técnica)">
-<meta name="dcterms.date" content="2025-09-01">
+<meta name="dcterms.date" content="2025-09-15">
 
 <title>Metodología empleada para la resolución de la Tarea A3 ‘Vías sin código de vía INE’</title>
 <style>
@@ -23,6 +23,41 @@ ul.task-list li input[type="checkbox"] {
   width: 0.8em;
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -92,7 +127,7 @@ background-size: cover;
       <div>
       <div class="quarto-title-meta-heading">Published</div>
       <div class="quarto-title-meta-contents">
-        <p class="date">September 1, 2025</p>
+        <p class="date">September 15, 2025</p>
       </div>
     </div>
     
@@ -108,7 +143,7 @@ background-size: cover;
   <ul>
   <li><a href="#sec-resumen" id="toc-sec-resumen" class="nav-link active" data-scroll-target="#sec-resumen"><span class="header-section-number">1</span> Resumen</a>
   <ul>
-  <li><a href="#información-de-partida-y-análisis-inicial" id="toc-información-de-partida-y-análisis-inicial" class="nav-link" data-scroll-target="#información-de-partida-y-análisis-inicial"><span class="header-section-number">1.1</span> Información de partida y análisis inicial</a></li>
+  <li><a href="#información-de-partida-y-análisis-exploratorio" id="toc-información-de-partida-y-análisis-exploratorio" class="nav-link" data-scroll-target="#información-de-partida-y-análisis-exploratorio"><span class="header-section-number">1.1</span> Información de partida y análisis exploratorio</a></li>
   <li><a href="#fuentes-de-datos-empleadas" id="toc-fuentes-de-datos-empleadas" class="nav-link" data-scroll-target="#fuentes-de-datos-empleadas"><span class="header-section-number">1.2</span> Fuentes de datos empleadas</a></li>
   </ul></li>
   <li><a href="#flujo-metodológico" id="toc-flujo-metodológico" class="nav-link" data-scroll-target="#flujo-metodológico"><span class="header-section-number">2</span> Flujo metodológico</a>
@@ -144,7 +179,7 @@ background-size: cover;
 
 
 
-<div id="6cbaac61" class="cell" data-execution_count="1">
+<div id="593bb46d" class="cell" data-execution_count="1">
 <div class="cell-output cell-output-display">
 
 <div class="card mb-3" style="padding:10px; background-color:#f8f9fa; border-left: 5px solid #09488bff;">
@@ -155,30 +190,188 @@ background-size: cover;
 <p>Mediante la Orden TER/1235/2023 (E2025001009), el Cabildo de Tenerife encarga a Cartográfica de Canarias S.A. (GRAFCAN) la ejecución de tareas de análisis y depuración del padrón de municipios de menos de 20.000 habitantes, en el marco del proyecto <em>TenerifePadrón 2.0</em>, encuadrado a su vez en la iniciativa <em>Padrón Online</em> del INE.</p>
 <section id="sec-resumen" class="level1" data-number="1">
 <h1 data-number="1"><span class="header-section-number">1</span> Resumen</h1>
-<p>Este documento describe la metodología empleada para la resolución de la Tarea A1 (‘Hogares sin CIV’) , que consiste en la asignación de Código de Identificación de Vivienda (CIV) para aquellos hogares que carecen del mismo. La aproximación se centra en la búsqueda de emparejamientos mediante dirección para los ficheros proporcionados por el INE, así como la comparación contra otras fuentes de datos. Tras un emparejamiento exitoso, se realiza la asignación de CIV para el hogar de acuerdo con el procedimiento dispuesto en la <a href="mapas/Guia_Tecnica_de_Subvenciones.pdf" target="_blank">Guía Técnica de Subvenciones</a>.</p>
-<p>Dada la inexistencia de un mecanismo de emparejamiento unívoco, la variedad en los formatos de nomenclatura y la incompletitud de las descripciones hasta nivel de inmueble, se ha optado por emplear distintos métodos de emparejamiento basados en coincidencia exacta y coincidencia difusa (aplicando primero los más conservadores y optimizando los menos restrictivos para minimizar los falsos positivos), para las direcciones hasta nivel de parcela.</p>
-<p>Los resultados reflejan un <strong>82,25% de asignación</strong> a nivel global tras la comparación con todas las fuentes de datos (asumiendo cierto margen de error para los registros procedentes de coincidencia difusa, si bien se ha trabajado en minimizarlo). Para aquellos registros que forman parte del <strong>residuo (17,75%)</strong>, con correspondiente nueva alta de CIV, se realizó una revisión exhaustiva de los motivos de no asignación, entre los que destacan la falta de descripciones completas en el fichero origen o las fuentes comparadas.</p>
-<p>El desarrollo y resultados de los trabajos se plasman en el presente informe, así como en el <a href="mapas/Atlas_v2.pdf" target="_blank">atlas</a> que muestra la distribución espacial de los hogares y estadísticos más relevantes para cada municipio.</p>
-<section id="información-de-partida-y-análisis-inicial" class="level2" data-number="1.1">
-<h2 data-number="1.1" class="anchored" data-anchor-id="información-de-partida-y-análisis-inicial"><span class="header-section-number">1.1</span> Información de partida y análisis inicial</h2>
+<p>Este documento describe la metodología empleada para la resolución de la Tarea A3 (‘Registros del fichero de Viviendas sin código de vía INE’), que consiste en la asignación de código de vía en formato INE (cvia_ine en adelante) para aquellas viviendas no principales cuya vía catastral no se ha podido identificar en el callejero del censo electoral.</p>
+<p>La aproximación se centra en la asignación de cvia_ine (o código de unidad poblacional en su defecto, tal y como recoge la <a href="mapas/Guia_Tecnica_de_Subvenciones.pdf" target="_blank">Guía Técnica de Subvenciones</a>), mediante ubicación espacial de la vivienda y análisis de vecindad con cartografía de portales o vías del callejero de SITCAN, así como cartografía de unidades poblacionales. Además de la asignación de cvia_ine o código de unidad poblacional (UP en adelante), se clasifican los registros de acuerdo a su emparejamiento en base a las descripciones de su dirección.</p>
+<p>Dada la variedad en los formatos de nomenclatura y la incompletitud de muchas descripciones, se ha optado por emplear métodos de emparejamiento basados en heurística y machine learning para determinar si la dirección de ambas fuentes hace referencia a la misma localización. La utilidad de esto último radica en la capacidad de discernir aquellas vías con nombres alternativos o vías que necesitan darse de alta.</p>
+<p><u>Los resultados reflejan un <strong>82,25% de asignación</strong> a nivel global tras la comparación con todas las fuentes de datos (asumiendo cierto margen de error para los registros procedentes de coincidencia difusa, si bien se ha trabajado en minimizarlo). Para aquellos registros que forman parte del <strong>residuo (17,75%)</strong>, con correspondiente nueva alta de CIV, se realizó una revisión exhaustiva de los motivos de no asignación, entre los que destacan la falta de descripciones completas en el fichero origen o las fuentes comparadas.</u></p>
+<p><u>El desarrollo y resultados de los trabajos se plasman en el presente informe, así como en el <a href="mapas/Atlas_v2.pdf" target="_blank">atlas</a> que muestra la distribución espacial de los hogares y estadísticos más relevantes para cada municipio.</u></p>
+<section id="información-de-partida-y-análisis-exploratorio" class="level2" data-number="1.1">
+<h2 data-number="1.1" class="anchored" data-anchor-id="información-de-partida-y-análisis-exploratorio"><span class="header-section-number">1.1</span> Información de partida y análisis exploratorio</h2>
 <p>La información proporcionada por el INE es la siguiente:</p>
 <ul>
-<li><em>Registros del fichero de hogares sin CIV (HSppmmml.023).</em></li>
+<li><em>Registros afectados del fichero de viviendas con dirección catastral (VCppmmml.023)</em></li>
 </ul>
-<p>Inicialmente, con el fin de recuperar la referencia catastral a 20 dígitos (RC20) desde el fichero de viviendas, se buscó emparejar la dirección <strong>hasta nivel de inmueble</strong>. Sin embargo, debido a la incompletitud de los campos de dirección y la falta de información suficiente en muchos registros, el <strong>nivel de emparejamiento conseguido fue muy bajo</strong>.</p>
-<p>Por este motivo, se descartó esta vía y se optó por realizar el emparejamiento <strong>hasta nivel de portal</strong>, lo que garantiza una mayor cobertura de los hogares aunque con menor detalle. De este modo, la asignación de CIV se realizó a partir de la referencia catastral a 14 dígitos (RC14), lo que <strong>implica la incapacidad de asociar la figura del hogar al inmueble.</strong></p>
+<p>Este fichero contiene un total de 14.723 registros repartidos en 913 vías, la situación de partida por municipios se muestra en la siguiente tabla:</p>
+<div id="46827e62" class="cell" data-execution_count="2">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Cargar Excel</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>df <span class="op">=</span> pd.read_excel(<span class="st">"a3_diagnostico.xlsx"</span>, sheet_name<span class="op">=</span><span class="st">"resumen_municipio"</span>)</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Mostrar tabla (Quarto la renderiza bonita)</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>df</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-display" data-execution_count="2">
+<div>
+
+<table class="dataframe table table-sm table-striped small">
+  <thead>
+    <tr>
+      <th></th>
+      <th>Código</th>
+      <th>Municipio</th>
+      <th>Nº viviendas</th>
+      <th>Nº vías</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>004</td>
+      <td>Arafo</td>
+      <td>1017</td>
+      <td>94</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>005</td>
+      <td>Arico</td>
+      <td>1417</td>
+      <td>118</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>010</td>
+      <td>Buenavista del Norte</td>
+      <td>615</td>
+      <td>66</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>012</td>
+      <td>Fasnia</td>
+      <td>854</td>
+      <td>41</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>015</td>
+      <td>Garachico</td>
+      <td>651</td>
+      <td>53</td>
+    </tr>
+    <tr>
+      <th>5</th>
+      <td>018</td>
+      <td>Guancha, La</td>
+      <td>200</td>
+      <td>17</td>
+    </tr>
+    <tr>
+      <th>6</th>
+      <td>025</td>
+      <td>Matanza de Acentejo, La</td>
+      <td>382</td>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>7</th>
+      <td>032</td>
+      <td>Rosario, El</td>
+      <td>3215</td>
+      <td>165</td>
+    </tr>
+    <tr>
+      <th>8</th>
+      <td>034</td>
+      <td>San Juan de la Rambla</td>
+      <td>531</td>
+      <td>46</td>
+    </tr>
+    <tr>
+      <th>9</th>
+      <td>039</td>
+      <td>Santa Úrsula</td>
+      <td>513</td>
+      <td>29</td>
+    </tr>
+    <tr>
+      <th>10</th>
+      <td>040</td>
+      <td>Santiago del Teide</td>
+      <td>1078</td>
+      <td>34</td>
+    </tr>
+    <tr>
+      <th>11</th>
+      <td>041</td>
+      <td>Sauzal, El</td>
+      <td>953</td>
+      <td>43</td>
+    </tr>
+    <tr>
+      <th>12</th>
+      <td>042</td>
+      <td>Silos, Los</td>
+      <td>631</td>
+      <td>56</td>
+    </tr>
+    <tr>
+      <th>13</th>
+      <td>044</td>
+      <td>Tanque, El</td>
+      <td>85</td>
+      <td>16</td>
+    </tr>
+    <tr>
+      <th>14</th>
+      <td>046</td>
+      <td>Tegueste</td>
+      <td>750</td>
+      <td>51</td>
+    </tr>
+    <tr>
+      <th>15</th>
+      <td>051</td>
+      <td>Victoria de Acentejo, La</td>
+      <td>985</td>
+      <td>23</td>
+    </tr>
+    <tr>
+      <th>16</th>
+      <td>052</td>
+      <td>Vilaflor de Chasna</td>
+      <td>272</td>
+      <td>30</td>
+    </tr>
+    <tr>
+      <th>17</th>
+      <td>TOTAL</td>
+      <td>NaN</td>
+      <td>14149</td>
+      <td>913</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+</div>
+</div>
+<p>Por otro lado, analizando las 10 direcciones con más registros, se constata la existencia de direcciones con difícil emparejamiento (aunque cvia_ine asignable por la vía espacial), como son ‘PROC. SIMPLIFICADO’, ‘DS DISEMINADOS’ o ‘DS DISEMINADO’, que suman un total de 919 registros. La suma de todos los registros cuya descripción hace referencia a un diseminado asciende a XXX.</p>
 </section>
 <section id="fuentes-de-datos-empleadas" class="level2" data-number="1.2">
 <h2 data-number="1.2" class="anchored" data-anchor-id="fuentes-de-datos-empleadas"><span class="header-section-number">1.2</span> Fuentes de datos empleadas</h2>
-<p>Si bien la búsqueda se realizó primero contra el fichero de viviendas como fuente preferente para la asignación de CIV, dado que esta solo recupera alrededor del 27% de registros, se buscaron las direcciones de los hogares del fichero HS contra las siguientes fuentes complementarias:</p>
+<p><u>Si bien la búsqueda se realizó primero contra el fichero de viviendas como fuente preferente para la asignación de CIV, dado que esta solo recupera alrededor del 27% de registros, se buscaron las direcciones de los hogares del fichero HS contra las siguientes fuentes complementarias:</u></p>
 <ul>
-<li><strong>Catastro</strong>: ficheros CAT (alfanumérico) y cartografía vectorial (gráfico) con información de fincas, unidades constructivas e inmuebles urbanos y rústicos.</li>
 <li><strong>Callejero del SITCAN</strong> (Sistema de Información Territorial de Canarias): gestionado y mantenido por GRAFCAN, constituye la base oficial de referencia para la red viaria de Canarias.</li>
+<li><strong>Poblaciones</strong>: base de datos con información georreferenciada de poblaciones publicada por el Instituto Geográfico Nacional (IGN).</li>
 </ul>
 </section>
 </section>
 <section id="flujo-metodológico" class="level1" data-number="2">
 <h1 data-number="2"><span class="header-section-number">2</span> Flujo metodológico</h1>
+<p><img src="mapas/A3_estado.png" class="img-fluid" style="max-width:100%; max-height:80vh;"></p>
 <p>La asignación de CIV a cada hogar se desarrolla en una secuencia de etapas, resumidas a continuación para proporcionar una visión global del proceso:</p>
 <ol type="1">
 <li><p><strong>Preparación del entorno:</strong></p>
@@ -232,10 +425,9 @@ Generación de puntos
 </ul>
 <p>Una vez recuperada la RC14 para aquellos registros con emparejamiento exitoso, se aplica el proceso de generación del CIV a cada hogar de acuerdo con las directrices recogidas en la <a href="mapas/Guia_Tecnica_de_Subvenciones.pdf" target="_blank">Guía Técnica de Subvenciones</a> .</p></li>
 <li><p><strong>Ficheros de salida</strong>:</p>
-<p>Tras la modificación del fichero HS con los nuevos emparejamientos y la generación de altas de viviendas para aquellos registros sin emparejamiento exitoso, se generan los siguientes archivos de salida de acuerdo con la estructura de datos establecida:</p>
+<p>Tras la asignación de cvia_ine o UP a los registros y su marcaje de propuesta para vías de nueva alta a los ayuntamiento, se generan los siguientes archivos de salida de acuerdo con la estructura de datos establecida:</p>
 <ul>
-<li><p><em>HSppmmmA.023: registros del fichero de hogares con CIV cumplimentado.</em></p></li>
-<li><p><em>VAppmmmA.023: registros del fichero de alta de viviendas con CIV nuevo.</em></p></li>
+<li><em>VCppmmmA.023: registros afectados del fichero de viviendas con dirección catastral y código de vía del callejero de censo electoral.</em></li>
 </ul></li>
 </ol>
 <section id="preparación-del-entorno" class="level2" data-number="2.1">

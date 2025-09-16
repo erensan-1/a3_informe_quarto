@@ -36,8 +36,44 @@ total_problem = len(vv_problem)
 print(f"Registros problemáticos: {total_problem}")
 
 # ---------- 5. Distribución por municipio ----------
-vv_municipio = vv_problem.groupby('cmun_dgc').agg(total=('cmun_dgc', 'size')).reset_index()
-vv_municipio['municipio'] = vv_municipio['cmun_dgc'].map(municipios_tenerife)
+vv_municipio = (
+    vv_problem
+    .groupby('cmun_dgc')
+    .agg(
+        total=('cmun_dgc', 'size'),
+        vias_distintas=('tvia_dgc', 
+                        lambda x: pd.Series(x).str.cat(
+                            vv_problem.loc[x.index, 'nvia_dgc'].astype(str),
+                            sep='', na_rep=''
+                        ).nunique()
+                       )
+    )
+    .reset_index()
+)
+
+# Añadir nombre del municipio
+vv_municipio['Municipio'] = vv_municipio['cmun_dgc'].map(municipios_tenerife)
+
+# Renombrar y reordenar columnas
+vv_municipio = vv_municipio.rename(
+    columns={
+        'cmun_dgc': 'Código',
+        'total': 'Nº viviendas',
+        'vias_distintas': 'Nº vías'
+    }
+)[['Código', 'Municipio', 'Nº viviendas', 'Nº vías']]
+
+# Crear fila de totales
+totales = pd.DataFrame([{
+    'Código': 'TOTAL',
+    'Municipio': '',
+    'Nº viviendas': vv_municipio['Nº viviendas'].sum(),
+    'Nº vías': vv_municipio['Nº vías'].sum()
+}])
+
+# Concatenar tabla con la fila de totales
+vv_municipio = pd.concat([vv_municipio, totales], ignore_index=True)
+
 
 # ---------- 6. Distribución por tipo de vía ----------
 vv_tipo_via = vv_problem.groupby('tvia_dgc').agg(total=('tvia_dgc', 'size')).reset_index().sort_values('total', ascending=False)
