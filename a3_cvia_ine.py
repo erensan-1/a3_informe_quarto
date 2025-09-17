@@ -279,6 +279,9 @@ for codmun, nombre in municipios.items():
                     if not poblacion.empty and pd.notna(poblacion['cunn_1'].iloc[0]):
                         df_vc.at[idx, 'cod_pob'] = poblacion['cunn_1'].iloc[0]
                         df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaUnidadPoblacional'
+                    else:
+                        df_vc.at[idx, 'a3_estado'] = 'A3_AsignarViaNueva'
+
 
         # ==============================
         # PRIORIDAD 2: VÍAS CERCANAS
@@ -321,12 +324,16 @@ for codmun, nombre in municipios.items():
                         if not poblacion.empty and pd.notna(poblacion['cunn_1'].iloc[0]):
                             df_vc.at[idx, 'cod_pob'] = poblacion['cunn_1'].iloc[0]
                             df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaUnidadPoblacional'
+                        else:
+                            df_vc.at[idx, 'a3_estado'] = 'A3_AsignarViaNueva'
 
         # ==============================
         # PRIORIDAD 3: VIVIENDA AISLADA
         # ==============================
         if pd.isna(df_vc.at[idx, 'a3_estado']) or df_vc.at[idx, 'a3_estado'] == '':
             gdf_row = gpd.GeoDataFrame([row], geometry='geom', crs=df_vc.crs)
+
+            # 1️⃣ Buscar vía más cercana SIEMPRE
             nearest = gpd.sjoin_nearest(
                 gdf_row,
                 df_callejero_via_mun[['geom','codvia','uuid']],
@@ -334,37 +341,39 @@ for codmun, nombre in municipios.items():
                 rsuffix='_right'
             )
 
-            # Buscar columnas candidatas sin importar sufijo
+            # Detectar columnas candidatas
             uuid_candidates = [c for c in nearest.columns if c.startswith("uuid")]
             codvia_candidates = [c for c in nearest.columns if c.startswith("codvia")]
 
             uuid_col = uuid_candidates[0] if uuid_candidates else None
             codvia_col = codvia_candidates[0] if codvia_candidates else None
 
+            # 👉 Asignar siempre cvia_ine y uuid si existe algo en nearest
             if not nearest.empty and uuid_col and codvia_col:
                 df_vc.at[idx, 'cvia_ine'] = nearest[codvia_col].iloc[0]
                 df_vc.at[idx, 'a3_uuid'] = nearest[uuid_col].iloc[0]
 
-                # Intentar asignar unidad poblacional
-                df_poblaciones_clean = df_poblaciones_mun[['cunn_1','geom']].copy()
-                poblacion = gpd.sjoin(
-                    gdf_row,
-                    df_poblaciones_clean,
-                    how='left',
-                    predicate='within',
-                    rsuffix='_pob'
-                )
-                if not poblacion.empty and pd.notna(poblacion['cunn_1'].iloc[0]):
-                    df_vc.at[idx, 'cod_pob'] = poblacion['cunn_1'].iloc[0]
-                    df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaUnidadPoblacional'
-                else:
-                    df_vc.at[idx, 'a3_estado'] = 'A3_Aislada'
+            # 2️⃣ Intentar asignar unidad poblacional
+            df_poblaciones_clean = df_poblaciones_mun[['cunn_1','geom']].copy()
+            poblacion = gpd.sjoin(
+                gdf_row,
+                df_poblaciones_clean,
+                how='left',
+                predicate='within',
+                rsuffix='_pob'
+            )
+
+            if not poblacion.empty and pd.notna(poblacion['cunn_1'].iloc[0]):
+                df_vc.at[idx, 'cod_pob'] = poblacion['cunn_1'].iloc[0]
+                df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaUnidadPoblacional'
             else:
                 df_vc.at[idx, 'a3_estado'] = 'A3_Aislada'
 
+            # 3️⃣ Info extra
             df_vc.at[idx, 'a3_origen'] = 'callejero_via'
             df_vc.at[idx, 'direccion_norm_callejero'] = '' if nearest.empty else df_vc.at[idx, 'direccion_norm_callejero']
             df_vc.at[idx, 'a3_metodo'] = 'random_forest'
+
 
     # ==============================
     # ASIGNACIÓN UNIVERSAL DE UNIDAD POBLACIONAL
@@ -381,12 +390,9 @@ for codmun, nombre in municipios.items():
         if pd.notna(row['cunn_1']):
             df_vc.at[idx, 'cod_pob'] = row['cunn_1']
 
-
-
 # Corregir formato de cvia_ine
 df_vc['cvia_ine'] = df_vc['cvia_ine'].apply(lambda x: str(x).zfill(5))
                 
-
 # CORREGIR FORMATO CODVIA
 df_vc['cvia_ine'] = df_vc['cvia_ine'].apply(lambda x: str(x).zfill(5))
 
