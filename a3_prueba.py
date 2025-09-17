@@ -1,340 +1,149 @@
-# LIBRARY
 import pandas as pd
-import geopandas as gpd
-import random
-import unicodedata
-from rapidfuzz import process, fuzz
-from sqlalchemy import create_engine
-from tqdm import tqdm
-from shapely import make_valid
 import matplotlib.pyplot as plt
-import seaborn as sns
-import logging
+import numpy as np
+from openpyxl import load_workbook
+from openpyxl.drawing.image import Image
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, confusion_matrix
+# Configurar tipografía moderna
+plt.rcParams['font.family'] = 'DejaVu Sans'
+plt.rcParams['font.size'] = 10
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Cargar Excel
+file_path = "a3_asignaciones_vc.xlsx"
+df = pd.read_excel(file_path)
 
-BUFFER_DISTANCE = 100
-SPECIAL_CODVIA_THRESHOLD = 90000
-HEURISTIC_HIGH_THRESHOLD = 95
-HEURISTIC_LOW_THRESHOLD = 60
-
-logger.info("Conectando a la base de datos...")
-DB_URI = "postgresql+psycopg2://erensan:5eP79ECt@192.168.21.226:5432/padron_online"
-engine = create_engine(DB_URI)
-
-SIGLAS_VIA = {
-    'AL': 'ALAMEDA', 'AD': 'ALDEA', 'AP': 'APARTAMENTOS', 'AY': 'ARROYO', 'AV': 'AVENIDA',
-    'BJ': 'BAJADA', 'BR': 'BARRANCO', 'BO': 'BARRIO', 'BL': 'BLOQUE', 'CL': 'CALLE',
-    'CJ': 'CALLEJA', 'CM': 'CAMINO', 'CR': 'CARRERA', 'CS': 'CASERIO', 'CH': 'CHALET',
-    'CO': 'COLONIA', 'CN': 'COSTANILLA', 'CT': 'CARRETERA', 'CU': 'CUESTA', 'ED': 'EDIFICIO',
-    'EL': 'ESCALINATA', 'ES': 'ESCALERA', 'GL': 'GLORIETA', 'GR': 'GRUPO', 'LG': 'LUGAR',
-    'MC': 'MERCADO', 'MN': 'MUNICIPIO', 'MZ': 'MANZANA', 'PA': 'PASEO ALTO', 'PB': 'POBLADO',
-    'PD': 'PASADIZO', 'PJ': 'PASAJE', 'PL': 'PLACETA', 'PO': 'PASEO BAJO', 'PP': 'PASEO',
-    'PQ': 'PARQUE', 'PR': 'PORTALES', 'PS': 'PASO', 'PT': 'PATIO', 'PU': 'PLAZUELA',
-    'PZ': 'PLAZA', 'RA': 'RAMAL', 'RB': 'RAMBLA', 'RC': 'RINCONADA', 'RD': 'RONDA',
-    'RP': 'RAMPA', 'RR': 'RIBERA', 'SC': 'SECTOR', 'SD': 'SENDA', 'SU': 'SUBIDA',
-    'TO': 'TORRE', 'TR': 'TRAVESÍA', 'UR': 'URBANIZACIÓN', 'URB': 'URBANIZACIÓN', 'VI': 'VÍA', 'ZO': 'ZONA',
-    'AVDA': 'AVENIDA', 'CTRA': 'CARRETERA', 'CLLON': 'CALLEJON', 'TRVA': 'TRAVESIA',
-    'CMNO': 'CAMINO', 'PSAJE': 'PASAJE', 'BRANC': 'BARRANCO', 'PZTA': 'PLAZOLETA',
-    'POLIG': 'POLIGONO', 'BARDA': 'BARRIADA', 'TRVAL': 'TRASVERSAL', 'ACCES': 'ACCESO',
-    'CZDA': 'CALZADA', 'CZADA': 'CALZADA', 'VREDA': 'VEREDA', 'PG':'POLIGONO', 'FCO RGUEZ': 'FRANCISCO RODRIGUEZ'
+# Diccionario de nombres amigables de estados
+estado_labels = {
+    "A3_AsignadaVia": "Asignada Vía",
+    "A3_AsignadaViaAlternativa": "Asignada Vía Alternativa",
+    "A3_AsignadaUnidadPoblacional": "Asignada Unidad Poblacional",
+    "A3_AsignarViaNueva": "Asignar Vía Nueva",
+    "A3_Aislada": "Aislada"
 }
 
-municipios = {
-    "38004": "Arafo", "38005": "Arico", "38010": "Buenavista del Norte", "38012": "Fasnia",
-    "38015": "Garachico", "38018": "Guancha, La", "38025": "Matanza de Acentejo, La", 
-    "38032": "Rosario, El", "38034": "San Juan de la Rambla", "38039": "Santa Úrsula",
-    "38040": "Santiago del Teide", "38041": "Sauzal, El", "38042": "Silos, Los",
-    "38044": "Tanque, El", "38046": "Tegueste", "38051": "Victoria de Acentejo, La",
-    "38052": "Vilaflor de Chasna"
+# Diccionario corregido de municipios con artículo al inicio
+municipios_adaptado = {
+    "4": "Arafo",
+    "5": "Arico",
+    "10": "Buenavista del Norte",
+    "12": "Fasnia",
+    "15": "Garachico",
+    "18": "La Guancha",
+    "25": "La Matanza de Acentejo",
+    "32": "El Rosario",
+    "34": "San Juan de la Rambla",
+    "39": "Santa Úrsula",
+    "40": "Santiago del Teide",
+    "41": "El Sauzal",
+    "42": "Los Silos",
+    "44": "El Tanque",
+    "46": "Tegueste",
+    "51": "La Victoria de Acentejo",
+    "52": "Vilaflor de Chasna"
 }
 
-def clean_index_right(gdf):
-    if 'index_right' in gdf.columns:
-        return gdf.drop(columns=['index_right'])
-    return gdf
+# Mapear nombres de municipios
+df['Municipio'] = df['cmun_ine'].astype(str).map(municipios_adaptado)
 
-def safe_sjoin(left_gdf, right_gdf, how='left', predicate='within', rsuffix=''):
-    left_clean = clean_index_right(left_gdf)
-    right_clean = clean_index_right(right_gdf)
-    return gpd.sjoin(left_clean, right_clean, how=how, predicate=predicate, rsuffix=rsuffix)
+# === Crear resumen por estado ===
+resumen_estado = df['a3_estado'].value_counts().reset_index()
+resumen_estado.columns = ['Estado', 'Cantidad']
+resumen_estado['Estado'] = resumen_estado['Estado'].map(estado_labels).fillna(resumen_estado['Estado'])
+resumen_estado['Porcentaje'] = (resumen_estado['Cantidad'] / resumen_estado['Cantidad'].sum()) * 100
+resumen_estado = resumen_estado.sort_values(by="Cantidad", ascending=False)
 
-def limpiar_texto(texto):
-    if not isinstance(texto, str):
-        texto = str(texto)
-    texto = texto.upper().strip()
-    texto = unicodedata.normalize('NFKD', texto)
-    return ''.join(c for c in texto if not unicodedata.combining(c))
-
-def normalizar_via_nombre(tvia, nvia):
-    tvia_raw = SIGLAS_VIA.get(str(tvia).strip().upper(), str(tvia))
-    tvia_norm = limpiar_texto(tvia_raw)
-    nvia_norm = limpiar_texto(nvia)
-    return f"{tvia_norm} {nvia_norm}"
-
-def corregir_geoms(gdf, nombre):
-    logger.info(f" - {nombre} inicial: {len(gdf)}")
-    gdf['geom'] = gdf['geom'].apply(lambda g: make_valid(g) if g is not None else None)
-    gdf = gdf[gdf.is_valid & ~gdf.is_empty]
-    logger.info(f" - {nombre} válidas: {len(gdf)}")
-    return gdf
-
-def compute_features(vc, callejero):
-    return {
-        "ratio": fuzz.ratio(vc, callejero),
-        "partial_ratio": fuzz.partial_ratio(vc, callejero),
-        "token_sort_ratio": fuzz.token_sort_ratio(vc, callejero),
-        "token_set_ratio": fuzz.token_set_ratio(vc, callejero),
-        "wratio": fuzz.WRatio(vc, callejero),
-        "len_diff": abs(len(vc) - len(callejero)),
-        "first_token_equal": int(vc.split()[0] == callejero.split()[0]) if vc and callejero else 0,
-        "last_token_equal": int(vc.split()[-1] == callejero.split()[-1]) if vc and callejero else 0,
-    }
-
-def filtro_heuristico(vc, callejero):
-    tsr_set = fuzz.token_set_ratio(vc, callejero)
-    wr = fuzz.WRatio(vc, callejero)
-    if tsr_set >= HEURISTIC_HIGH_THRESHOLD:
-        return 1
-    elif wr < HEURISTIC_LOW_THRESHOLD:
-        return 0
-    else:
-        return None
-
-def decidir_match(vc, callejero, clf):
-    h = filtro_heuristico(vc, callejero)
-    if h is not None:
-        return h
-    feats = pd.DataFrame([compute_features(vc, callejero)])
-    return int(clf.predict(feats)[0])
-
-def check_poblacion_assignment(row, df_poblaciones_mun, df_vc_crs):
-    poblacion = safe_sjoin(
-        gpd.GeoDataFrame([row], geometry='geom', crs=df_vc_crs),
-        df_poblaciones_mun[['cunn_1', 'geom']],
-        how='left',
-        predicate='within'
-    )
-    return (not poblacion.empty and pd.notna(poblacion['cunn_1'].iloc[0]))
-
-def process_portal_matching(row, df_callejero_num_mun, df_parcela_mun, refcat):
-    if pd.notna(refcat):
-        parcela_geom = df_parcela_mun.loc[df_parcela_mun['refcat'] == refcat, 'geom'].iloc[0]
-        cn_candidatos = df_callejero_num_mun[df_callejero_num_mun.within(parcela_geom)]
-    else:
-        cn_candidatos = gpd.GeoDataFrame(columns=df_callejero_num_mun.columns, geometry='geom', crs=df_callejero_num_mun.crs)
-    
-    if not cn_candidatos.empty:
-        matches = process.extractOne(row['direccion_norm'], cn_candidatos['direccion_norm'].tolist(), scorer=fuzz.WRatio)
-        if matches:
-            match_name = matches[0]
-            codvia = cn_candidatos.loc[cn_candidatos['direccion_norm'] == match_name, 'codvia'].iloc[0]
-            uuid_match = cn_candidatos.loc[cn_candidatos['direccion_norm'] == match_name, 'uuid'].iloc[0]
-            return {
-                'match_name': match_name,
-                'codvia': codvia,
-                'uuid_match': uuid_match,
-                'origen': 'callejero_num',
-                'found': True
-            }
-    return {'found': False}
-
-def process_via_proximity(row, df_callejero_via_mun, geom_vc):
-    buffer_geom = geom_vc.buffer(BUFFER_DISTANCE)
-    vias_cercanas = df_callejero_via_mun[df_callejero_via_mun.intersects(buffer_geom)]
-    
-    if not vias_cercanas.empty:
-        matches = process.extractOne(row['direccion_norm'], vias_cercanas['direccion_norm'].tolist(), scorer=fuzz.WRatio)
-        if matches:
-            match_name = matches[0]
-            codvia = vias_cercanas.loc[vias_cercanas['direccion_norm'] == match_name, 'codvia'].iloc[0]
-            uuid_match = vias_cercanas.loc[vias_cercanas['direccion_norm'] == match_name, 'uuid'].iloc[0]
-            return {
-                'match_name': match_name,
-                'codvia': codvia,
-                'uuid_match': uuid_match,
-                'origen': 'callejero_via',
-                'found': True
-            }
-    return {'found': False}
-
-def determine_a3_estado(row, match_result, df_poblaciones_mun, df_vc_crs, clf):
-    if not match_result['found']:
-        if check_poblacion_assignment(row, df_poblaciones_mun, df_vc_crs):
-            return 'A3_AsignadaUnidadPoblacional'
-        else:
-            return 'A3_Aislada'
-    
-    codvia = int(match_result['codvia'])
-    
-    if codvia > SPECIAL_CODVIA_THRESHOLD:
-        if check_poblacion_assignment(row, df_poblaciones_mun, df_vc_crs):
-            return 'A3_AsignadaUnidadPoblacional'
-        else:
-            return 'A3_AsignarViaNueva'
-    else:
-        if "NONE" in str(row['direccion_norm']) or "NONE" in str(match_result['match_name']):
-            return 'A3_AsignadaViaAlternativa'
-        else:
-            match_label = decidir_match(row['direccion_norm'], match_result['match_name'], clf)
-            return 'A3_AsignadaVia' if match_label == 1 else 'A3_AsignadaViaAlternativa'
-
-logger.info("Cargando datos desde base de datos...")
-try:
-    df_vv = gpd.read_postgis("SELECT * FROM trabajo.vivienda", engine, geom_col='geom', crs='EPSG:4326')
-    logger.info(f"Total viviendas cargadas: {len(df_vv)}")
-
-    df_vc = df_vv[df_vv['cvia_ine'] == 0].copy()
-    logger.info(f"Viviendas con cvia_ine == 0: {len(df_vc)}")
-
-    df_callejero_num = gpd.read_postgis("SELECT * FROM grafcan.callejero_num", engine, geom_col='geom', crs='EPSG:4326')
-    logger.info(f"Portales cargados: {len(df_callejero_num)}")
-
-    df_callejero_via = gpd.read_postgis("SELECT * FROM grafcan.callejero_via", engine, geom_col='geom', crs='EPSG:4326')
-    logger.info(f"Vías cargadas: {len(df_callejero_via)}")
-
-    df_parcela = gpd.read_postgis("SELECT * FROM catastro.parcela WHERE tipo != 'X'", engine, geom_col='geom', crs='EPSG:4326')
-    logger.info(f"Parcelas cargadas: {len(df_parcela)}")
-
-    df_poblaciones = gpd.read_postgis("SELECT * FROM age.poblaciones", engine, geom_col='geom', crs='EPSG:4326')
-    logger.info(f"Poblaciones cargadas: {len(df_poblaciones)}")
-
-except Exception as e:
-    logger.error(f"Error cargando datos: {e}")
-    raise
-
-df_vc = df_vc.assign(
-    cvia_ine='',
-    a3_estado='',
-    a3_origen='',
-    a3_metodo='',
-    a3_uuid='',
-    cod_pob='',
-    predict_proba=None,
-    direccion_norm_vc='',
-    direccion_norm_callejero=''
+# === Crear tabla de distribución por municipio y estado ===
+tabla_municipio_estado = pd.pivot_table(
+    df,
+    index='Municipio',
+    columns='a3_estado',
+    aggfunc='size',
+    fill_value=0
 )
+tabla_municipio_estado = tabla_municipio_estado.rename(columns=estado_labels)
 
-logger.info("Normalizando nombres de vías...")
-df_vc['direccion_norm'] = df_vc.apply(lambda r: normalizar_via_nombre(r['tvia_dgc'], r['nvia_dgc']), axis=1)
-df_callejero_num['direccion_norm'] = df_callejero_num.apply(lambda r: normalizar_via_nombre(r['tipovia'], r['nombrevia']), axis=1)
-df_callejero_via['direccion_norm'] = df_callejero_via.apply(lambda r: normalizar_via_nombre(r['tipovia'], r['nombrevia']), axis=1)
+# Añadir columna Total sumando todas las asignaciones por municipio
+tabla_municipio_estado['Total'] = tabla_municipio_estado.sum(axis=1)
 
-logger.info("Corrigiendo geometrías...")
-df_vc = corregir_geoms(df_vc, "Viviendas")
-df_parcela = corregir_geoms(df_parcela, "Parcelas")
-df_callejero_num = corregir_geoms(df_callejero_num, "Portales")
-df_callejero_via = corregir_geoms(df_callejero_via, "Vías")
+# Convertir índice Municipio en columna
+tabla_municipio_estado = tabla_municipio_estado.reset_index()
 
-logger.info("Entrenando clasificador ML...")
+# Añadir columna Código al inicio
+codigo_municipio = df.groupby('Municipio')['cmun_ine'].first()
+tabla_municipio_estado.insert(0, 'Código', tabla_municipio_estado['Municipio'].map(codigo_municipio))
 
-try:
-    df_test = pd.read_excel("sample_direcciones_para_match_manual.xlsx")
-    
-    feature_rows = []
-    labels = []
-    for _, row in df_test.iterrows():
-        if pd.isna(row['match_manual']):
-            continue
-        direccion_vc = str(row['direccion_norm_vc']) if pd.notna(row['direccion_norm_vc']) else ""
-        direccion_callejero = str(row['direccion_norm_callejero']) if pd.notna(row['direccion_norm_callejero']) else ""
-        feats = compute_features(direccion_vc, direccion_callejero)
-        feature_rows.append(feats)
-        labels.append(int(row['match_manual']))
+# Reordenar columnas
+column_order = [
+    'Código',
+    'Municipio',
+    'Asignada Vía',
+    'Asignada Vía Alternativa',
+    'Asignada Unidad Poblacional',
+    'Asignar Vía Nueva',
+    'Aislada',
+    'Total'
+]
+for col in column_order:
+    if col not in tabla_municipio_estado.columns:
+        tabla_municipio_estado[col] = 0
+tabla_municipio_estado = tabla_municipio_estado[column_order]
 
-    X = pd.DataFrame(feature_rows)
-    y = pd.Series(labels)
+# === Formatear las columnas de estados con "Cantidad (Porcentaje%)" ===
+estado_cols = column_order[2:-1]  # columnas de estados
+for col in estado_cols:
+    tabla_municipio_estado[col] = tabla_municipio_estado.apply(
+        lambda row: f"{row[col]} ({row[col]/row['Total']*100:.1f}%)" if row['Total'] > 0 else "0 (0.0%)",
+        axis=1
+    )
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# === Añadir fila de totales al final ===
+total_dict = {'Código':'', 'Municipio':'Total'}
+total_general = tabla_municipio_estado['Total'].sum()
+for col in estado_cols:
+    total_cantidad = tabla_municipio_estado[col].apply(lambda x: int(x.split(' ')[0])).sum()
+    porcentaje = total_cantidad / total_general * 100 if total_general > 0 else 0
+    total_dict[col] = f"{total_cantidad} ({porcentaje:.1f}%)"
+total_dict['Total'] = total_general
 
-    clf = RandomForestClassifier(n_estimators=200, random_state=42, class_weight="balanced")
-    clf.fit(X_train, y_train)
+fila_total_df = pd.DataFrame([total_dict])
+tabla_municipio_estado = pd.concat([tabla_municipio_estado, fila_total_df], ignore_index=True)
 
-    y_pred = clf.predict(X_test)
-    logger.info("=== Evaluación del modelo ===")
-    logger.info(f"\n{classification_report(y_test, y_pred)}")
-    
-    feature_importances = pd.DataFrame({
-        'feature': X.columns,
-        'importance': clf.feature_importances_
-    }).sort_values(by='importance', ascending=False)
-    logger.info(f"\n=== Importancia de las variables ===\n{feature_importances}")
+# === Gráfico de barras horizontal por estado ===
+y_pos = np.arange(len(resumen_estado)) * 0.25
+plt.figure(figsize=(9,6))
+bars = plt.barh(y_pos, resumen_estado['Cantidad'], height=0.2, align='center', color="#4c72b0")
+plt.yticks(y_pos, resumen_estado['Estado'])
+plt.title("Distribución por estado de asignación", fontweight='bold')
+plt.xlabel("Nº de registros", fontweight='bold')
 
-except FileNotFoundError:
-    logger.warning("Archivo de validación no encontrado. Usando modelo básico.")
-    clf = None
+for i, (cantidad, porcentaje, estado) in enumerate(zip(resumen_estado['Cantidad'], resumen_estado['Porcentaje'], resumen_estado['Estado'])):
+    label = f"{cantidad} ({porcentaje:.1f}%)"
+    y = y_pos[i]
+    if estado in ["Asignada Vía", "Asignada Vía Alternativa"]:
+        plt.text(cantidad * 0.98, y, label, ha='right', va='center', fontsize=9, fontweight='bold', color="white", fontname='DejaVu Sans')
+    else:
+        plt.text(cantidad + max(resumen_estado['Cantidad']) * 0.01, y, label, va='center', fontsize=9, fontweight='bold', color="dimgray", fontname='DejaVu Sans')
 
-for codmun, nombre in municipios.items():
-    logger.info(f"\nProcesando municipio {nombre} ({codmun})...")
-    mun_id = int(codmun[-2:])
+plt.gca().invert_yaxis()
+plt.tight_layout()
+grafico_path = "grafico_estado.png"
+plt.savefig(grafico_path)
+plt.close()
 
-    df_vc_mun = df_vc[df_vc['cmun_ine'].astype(int) == mun_id].copy()
-    df_parcela_mun = df_parcela[df_parcela['municipio'].astype(int) == mun_id].copy()
-    df_callejero_num_mun = df_callejero_num[df_callejero_num['codmun'].astype(str).str[-2:].astype(int) == mun_id].copy()
-    df_callejero_via_mun = df_callejero_via[df_callejero_via['codmun'].astype(str).str[-2:].astype(int) == mun_id].copy()
-    df_poblaciones_mun = clean_index_right(df_poblaciones.copy())
+# === Exportar a Excel ===
+output_file = "resumen_resultados.xlsx"
+with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+    resumen_estado.to_excel(writer, sheet_name="Por Estado", index=False)
+    tabla_municipio_estado.to_excel(writer, sheet_name="Por Municipio", index=False)
 
-    if df_vc_mun.empty:
-        logger.info("  No hay viviendas para este municipio.")
-        continue
+# Añadir hoja con gráfico
+wb = load_workbook(output_file)
+ws = wb.create_sheet(title="Gráfico Estado")
+img = Image(grafico_path)
+img.anchor = 'A1'
+ws.add_image(img)
+wb.save(output_file)
 
-    vc_parcela = safe_sjoin(df_vc_mun, df_parcela_mun[['refcat', 'geom']], how="left", predicate="within")
+print(f"Resumen exportado a {output_file} con tabla y gráfico incluidos.")
+print(tabla_municipio_estado)
 
-    for idx, row in tqdm(vc_parcela.iterrows(), total=vc_parcela.shape[0], desc=f"Procesando {nombre}"):
-        refcat = row['refcat']
-        geom_vc = row['geom']
-
-        df_vc.at[row.name, 'direccion_norm_vc'] = row['direccion_norm']
-
-        portal_result = process_portal_matching(row, df_callejero_num_mun, df_parcela_mun, refcat)
-        
-        if portal_result['found']:
-            match_result = portal_result
-        else:
-            match_result = process_via_proximity(row, df_callejero_via_mun, geom_vc)
-
-        a3_estado = determine_a3_estado(row, match_result, df_poblaciones_mun, df_vc.crs, clf)
-        
-        df_vc.at[row.name, 'a3_estado'] = a3_estado
-        
-        if match_result['found']:
-            df_vc.at[row.name, 'cvia_ine'] = match_result['codvia']
-            df_vc.at[row.name, 'a3_origen'] = match_result['origen']
-            df_vc.at[row.name, 'direccion_norm_callejero'] = match_result['match_name']
-            df_vc.at[row.name, 'a3_uuid'] = match_result['uuid_match']
-
-    vc_con_pob = safe_sjoin(df_vc_mun, df_poblaciones_mun[['cunn_1', 'geom']], how="left", predicate="within", rsuffix="_pob")
-    
-    for idx, row in vc_con_pob.iterrows():
-        if pd.notna(row['cunn_1']):
-            df_vc.at[row.name, 'cod_pob'] = row['cunn_1']
-
-df_vc['cvia_ine'] = df_vc['cvia_ine'].apply(lambda x: str(x).zfill(5))
-
-df_vc.loc[
-    (
-        df_vc["direccion_norm_vc"].str.contains("NONE", na=False) |
-        df_vc["direccion_norm_callejero"].str.contains("NONE", na=False)
-    ) & (df_vc["a3_estado"] == "Asignada"),
-    "a3_estado"
-] = "AsignadaViaAlternativa"
-
-for col in ['uuid', 'direccion_norm']:
-    if col in df_vc.columns:
-        df_vc = df_vc.drop(columns=[col])
-
-logger.info("Exportando resultados...")
-df_vc.to_excel("a3_asignaciones_vc.xlsx", index=False)
-df_vc.to_csv("a3_asignaciones_vc.csv", index=False)
-
-logger.info("=== RESUMEN DE ASIGNACIONES ===")
-estados = ['A3_AsignadaVia', 'A3_AsignadaViaAlternativa', 'A3_AsignadaUnidadPoblacional', 'A3_Aislada']
-for estado in estados:
-    count = df_vc[df_vc['a3_estado'] == estado].shape[0]
-    logger.info(f"{estado}: {count} registros")
-logger.info(f"Total registros procesados: {len(df_vc)}")

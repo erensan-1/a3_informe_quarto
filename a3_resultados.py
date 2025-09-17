@@ -1,80 +1,149 @@
 import pandas as pd
-import geopandas as gpd
+import matplotlib.pyplot as plt
+import numpy as np
+from openpyxl import load_workbook
+from openpyxl.drawing.image import Image
 
-# Cargar la tabla
-df = pd.read_csv("a3_asignaciones_vc_rf.csv")
+# Configurar tipografía moderna
+plt.rcParams['font.family'] = 'DejaVu Sans'
+plt.rcParams['font.size'] = 10
 
-# Convertir a GeoDataFrame
-gdf = gpd.GeoDataFrame(
-    df, 
-    geometry=gpd.points_from_xy(df['coor_x'], df['coor_y']), 
-    crs="EPSG:25830"
+# Cargar Excel
+file_path = "a3_asignaciones_vc.xlsx"
+df = pd.read_excel(file_path)
+
+# Diccionario de nombres amigables de estados
+estado_labels = {
+    "A3_AsignadaVia": "Asignada Vía",
+    "A3_AsignadaViaAlternativa": "Asignada Vía Alternativa",
+    "A3_AsignadaUnidadPoblacional": "Asignada Unidad Poblacional",
+    "A3_AsignarViaNueva": "Asignar Vía Nueva",
+    "A3_Aislada": "Aislada"
+}
+
+# Diccionario corregido de municipios con artículo al inicio
+municipios_adaptado = {
+    "4": "Arafo",
+    "5": "Arico",
+    "10": "Buenavista del Norte",
+    "12": "Fasnia",
+    "15": "Garachico",
+    "18": "La Guancha",
+    "25": "La Matanza de Acentejo",
+    "32": "El Rosario",
+    "34": "San Juan de la Rambla",
+    "39": "Santa Úrsula",
+    "40": "Santiago del Teide",
+    "41": "El Sauzal",
+    "42": "Los Silos",
+    "44": "El Tanque",
+    "46": "Tegueste",
+    "51": "La Victoria de Acentejo",
+    "52": "Vilaflor de Chasna"
+}
+
+# Mapear nombres de municipios
+df['Municipio'] = df['cmun_ine'].astype(str).map(municipios_adaptado)
+
+# === Crear resumen por estado ===
+resumen_estado = df['a3_estado'].value_counts().reset_index()
+resumen_estado.columns = ['Estado', 'Cantidad']
+resumen_estado['Estado'] = resumen_estado['Estado'].map(estado_labels).fillna(resumen_estado['Estado'])
+resumen_estado['Porcentaje'] = (resumen_estado['Cantidad'] / resumen_estado['Cantidad'].sum()) * 100
+resumen_estado = resumen_estado.sort_values(by="Cantidad", ascending=False)
+
+# === Crear tabla de distribución por municipio y estado ===
+tabla_municipio_estado = pd.pivot_table(
+    df,
+    index='Municipio',
+    columns='a3_estado',
+    aggfunc='size',
+    fill_value=0
 )
+tabla_municipio_estado = tabla_municipio_estado.rename(columns=estado_labels)
 
-# Crear columna 'asignado' según 'metodo'
-df['asignado'] = df['metodo'].notna() & (df['metodo'] != '')
+# Añadir columna Total sumando todas las asignaciones por municipio
+tabla_municipio_estado['Total'] = tabla_municipio_estado.sum(axis=1)
 
-# ---------- 1. Estadísticas generales de asignaciones ----------
-print("Número total de registros:", len(df))
-print("Número de registros asignados:", df['asignado'].sum())
-print("Número de registros pendientes:", (~df['asignado']).sum())
+# Convertir índice Municipio en columna
+tabla_municipio_estado = tabla_municipio_estado.reset_index()
 
-# ---------- 2. Municipios con más y menos asignaciones ----------
-# Conteo de registros asignados por municipio
-asignaciones_municipio = df.groupby('cmun_ine')['asignado'].sum()
+# Añadir columna Código al inicio
+codigo_municipio = df.groupby('Municipio')['cmun_ine'].first()
+tabla_municipio_estado.insert(0, 'Código', tabla_municipio_estado['Municipio'].map(codigo_municipio))
 
-# Total de registros por municipio
-total_municipio = df.groupby('cmun_ine').size()
+# Reordenar columnas
+column_order = [
+    'Código',
+    'Municipio',
+    'Asignada Vía',
+    'Asignada Vía Alternativa',
+    'Asignada Unidad Poblacional',
+    'Asignar Vía Nueva',
+    'Aislada',
+    'Total'
+]
+for col in column_order:
+    if col not in tabla_municipio_estado.columns:
+        tabla_municipio_estado[col] = 0
+tabla_municipio_estado = tabla_municipio_estado[column_order]
 
-# Calcular porcentaje de asignados
-porcentaje_asignado = (asignaciones_municipio / total_municipio * 100).round(2)
+# === Formatear las columnas de estados con "Cantidad (Porcentaje%)" ===
+estado_cols = column_order[2:-1]  # columnas de estados
+for col in estado_cols:
+    tabla_municipio_estado[col] = tabla_municipio_estado.apply(
+        lambda row: f"{row[col]} ({row[col]/row['Total']*100:.1f}%)" if row['Total'] > 0 else "0 (0.0%)",
+        axis=1
+    )
 
-# Crear DataFrame combinado para exportar
-resumen_municipio = pd.DataFrame({
-    'Registros asignados': asignaciones_municipio,
-    'Total registros': total_municipio,
-    'Porcentaje asignado': porcentaje_asignado
-}).sort_values('Registros asignados', ascending=False)
+# === Añadir fila de totales al final ===
+total_dict = {'Código':'', 'Municipio':'Total'}
+total_general = tabla_municipio_estado['Total'].sum()
+for col in estado_cols:
+    total_cantidad = tabla_municipio_estado[col].apply(lambda x: int(x.split(' ')[0])).sum()
+    porcentaje = total_cantidad / total_general * 100 if total_general > 0 else 0
+    total_dict[col] = f"{total_cantidad} ({porcentaje:.1f}%)"
+total_dict['Total'] = total_general
 
-# ---------- 2b. Pendientes por municipio ----------
-pendientes_municipio = total_municipio - asignaciones_municipio
-porcentaje_pendiente = (pendientes_municipio / total_municipio * 100).round(2)
-resumen_pendientes_municipio = pd.DataFrame({
-    'Registros pendientes': pendientes_municipio,
-    'Total registros': total_municipio,
-    'Porcentaje pendiente': porcentaje_pendiente
-}).sort_values('Registros pendientes', ascending=False)
+fila_total_df = pd.DataFrame([total_dict])
+tabla_municipio_estado = pd.concat([tabla_municipio_estado, fila_total_df], ignore_index=True)
 
-# ---------- 3. Direcciones con mayor número de puntos sin asignar ----------
-pendientes_direccion = df[~df['asignado']].groupby('direccion_vv').size().sort_values(ascending=False)
-print("Direcciones con más puntos pendientes:\n", pendientes_direccion.head(10))
+# === Gráfico de barras horizontal por estado ===
+y_pos = np.arange(len(resumen_estado)) * 0.25
+plt.figure(figsize=(9,5))
+bars = plt.barh(y_pos, resumen_estado['Cantidad'], height=0.2, align='center', color="#4c72b0")
+plt.yticks(y_pos, resumen_estado['Estado'])
+plt.title("Distribución por estado de asignación", fontweight='bold')
+plt.xlabel("Nº de registros", fontweight='bold')
 
-# ---------- 4. Estadísticas de scores ----------
-score_cols = [col for col in df.columns if col.startswith('score_')]
+for i, (cantidad, porcentaje, estado) in enumerate(zip(resumen_estado['Cantidad'], resumen_estado['Porcentaje'], resumen_estado['Estado'])):
+    label = f"{cantidad} ({porcentaje:.1f}%)"
+    y = y_pos[i]
+    if estado in ["Asignada Vía", "Asignada Vía Alternativa"]:
+        plt.text(cantidad * 0.98, y, label, ha='right', va='center', fontsize=9, fontweight='bold', color="white", fontname='DejaVu Sans')
+    else:
+        plt.text(cantidad + max(resumen_estado['Cantidad']) * 0.01, y, label, va='center', fontsize=9, fontweight='bold', color="dimgray", fontname='DejaVu Sans')
 
-# ---------- 5. Conteo y porcentaje de asignaciones por método incluyendo vacíos ----------
-total_registros = len(df)
+plt.gca().invert_yaxis()
+plt.tight_layout()
+grafico_path = "grafico_estado.png"
+plt.savefig(grafico_path)
+plt.close()
 
-# Contar cada método específico
-conteo_fuzzy = (df['metodo'] == 'fuzzy + embedding + coseno').sum()
-conteo_exacto = (df['metodo'] == 'match exacto').sum()
-conteo_vacios = df['metodo'].isna().sum() + (df['metodo'] == '').sum()
+# === Exportar a Excel ===
+output_file = "resumen_resultados.xlsx"
+with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+    resumen_estado.to_excel(writer, sheet_name="Por Estado", index=False)
+    tabla_municipio_estado.to_excel(writer, sheet_name="Por Municipio", index=False)
 
-# Crear DataFrame resumen
-metodo_stats = pd.DataFrame({
-    'Metodo': ['fuzzy + embedding + coseno', 'match exacto', 'No asignado'],
-    'Conteo': [conteo_fuzzy, conteo_exacto, conteo_vacios],
-})
+# Añadir hoja con gráfico
+wb = load_workbook(output_file)
+ws = wb.create_sheet(title="Gráfico Estado")
+img = Image(grafico_path)
+img.anchor = 'A1'
+ws.add_image(img)
+wb.save(output_file)
 
-# Calcular porcentaje
-metodo_stats['Porcentaje'] = (metodo_stats['Conteo'] / total_registros * 100).round(2)
+print(f"Resumen exportado a {output_file} con tabla y gráfico incluidos.")
+print(tabla_municipio_estado)
 
-# ---------- 6. Exportar resultados a Excel ----------
-with pd.ExcelWriter("a3_resultados.xlsx") as writer:
-    resumen_municipio.to_excel(writer, sheet_name="Asignaciones por municipio")
-    resumen_pendientes_municipio.to_excel(writer, sheet_name="Pendientes por municipio")
-    pendientes_direccion.to_excel(writer, sheet_name="Pendientes por direccion")
-    df[score_cols].describe().to_excel(writer, sheet_name="Stats scores")
-    metodo_stats.to_excel(writer, sheet_name="Asignaciones por metodo")
-
-print("Análisis completo y exportado a 'a3_resultados.xlsx'.")

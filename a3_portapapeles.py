@@ -374,7 +374,6 @@ for codmun, nombre in municipios.items():
             df_vc.at[idx, 'direccion_norm_callejero'] = '' if nearest.empty else df_vc.at[idx, 'direccion_norm_callejero']
             df_vc.at[idx, 'a3_metodo'] = 'random_forest'
 
-
     # ==============================
     # ASIGNACIÓN UNIVERSAL DE UNIDAD POBLACIONAL
     # ==============================
