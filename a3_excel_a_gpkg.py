@@ -42,17 +42,17 @@ df['geometry'] = df.apply(lambda r: Point(r['coor_x_corr'], r['coor_y_corr']), a
 # Convertir a GeoDataFrame
 gdf = gpd.GeoDataFrame(df, geometry='geometry')
 
-# Reproyectar cada grupo a EPSG:4326
+# Reproyectar cada grupo a EPSG:32628
 gdf_corrected = gpd.GeoDataFrame(columns=gdf.columns)
 
 for crs_val, group in gdf.groupby('crs'):
     group = group.set_crs(crs_val, allow_override=True)
-    group = group.to_crs('EPSG:4326')
+    group = group.to_crs('EPSG:32628')  # <-- corregido
     gdf_corrected = pd.concat([gdf_corrected, group])
 
 gdf_corrected.reset_index(drop=True, inplace=True)
 gdf_corrected = gdf_corrected.set_geometry('geometry')
-gdf_corrected = gdf_corrected.set_crs('EPSG:4326', allow_override=True)
+gdf_corrected = gdf_corrected.set_crs('EPSG:32628', allow_override=True)
 
 # Eliminar columna 'geom' si existe
 if 'geom' in gdf_corrected.columns:
@@ -65,4 +65,3 @@ for col in gdf_corrected.select_dtypes(['object']).columns:
 
 # Guardar en GeoPackage listo para QGIS
 gdf_corrected.to_file("a3_asignaciones_vc.gpkg", driver="GPKG")
-

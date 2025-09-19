@@ -268,19 +268,7 @@ for codmun, nombre in municipios.items():
                     df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaVia' if match_label == 1 else 'A3_AsignadaViaAlternativa'
 
                 if int(codvia) > 90000:
-                    df_poblaciones_clean = df_poblaciones_mun[['cunn_1','geom']].copy()
-                    poblacion = gpd.sjoin(
-                        gpd.GeoDataFrame([row], geometry='geom', crs=df_vc.crs),
-                        df_poblaciones_clean,
-                        how='left',
-                        predicate='within',
-                        rsuffix='_pob'
-                    )
-                    if not poblacion.empty and pd.notna(poblacion['cunn_1'].iloc[0]):
-                        df_vc.at[idx, 'cod_pob'] = poblacion['cunn_1'].iloc[0]
-                        df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaUnidadPoblacional'
-                    else:
-                        df_vc.at[idx, 'a3_estado'] = 'A3_AsignarViaNueva'
+                    df_vc.at[idx, 'a3_estado'] = 'A3_AsignarViaNueva'
 
 
         # ==============================
@@ -313,19 +301,7 @@ for codmun, nombre in municipios.items():
                         df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaVia' if match_label == 1 else 'A3_AsignadaViaAlternativa'
 
                     if int(codvia) > 90000:
-                        df_poblaciones_clean = df_poblaciones_mun[['cunn_1','geom']].copy()
-                        poblacion = gpd.sjoin(
-                            gpd.GeoDataFrame([row], geometry='geom', crs=df_vc.crs),
-                            df_poblaciones_clean,
-                            how='left',
-                            predicate='within',
-                            rsuffix='_pob'
-                        )
-                        if not poblacion.empty and pd.notna(poblacion['cunn_1'].iloc[0]):
-                            df_vc.at[idx, 'cod_pob'] = poblacion['cunn_1'].iloc[0]
-                            df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaUnidadPoblacional'
-                        else:
-                            df_vc.at[idx, 'a3_estado'] = 'A3_AsignarViaNueva'
+                        df_vc.at[idx, 'a3_estado'] = 'A3_AsignarViaNueva'
 
         # ==============================
         # PRIORIDAD 3: VIVIENDA AISLADA
