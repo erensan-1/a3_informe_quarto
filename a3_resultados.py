@@ -21,6 +21,15 @@ estado_labels = {
     "A3_Aislada": "Aislada"
 }
 
+# Diccionario de abreviaturas SOLO para el gráfico
+estado_abrev = {
+    "Asignada Vía Alternativa": "AVA",
+    "Asignada Vía": "AV",
+    "Asignar Vía Nueva": "AVN",
+    "Aislada": "AIS",
+    "Asignada Unidad Poblacional": "AUP"
+}
+
 # Diccionario corregido de municipios con artículo al inicio
 municipios_adaptado = {
     "4": "Arafo",
@@ -108,27 +117,38 @@ total_dict['Total'] = total_general
 fila_total_df = pd.DataFrame([total_dict])
 tabla_municipio_estado = pd.concat([tabla_municipio_estado, fila_total_df], ignore_index=True)
 
-# === Gráfico de barras horizontal por estado ===
-y_pos = np.arange(len(resumen_estado)) * 0.25
-plt.figure(figsize=(9,5))
-bars = plt.barh(y_pos, resumen_estado['Cantidad'], height=0.2, align='center', color="#4c72b0")
-plt.yticks(y_pos, resumen_estado['Estado'])
-plt.title("Distribución por estado de asignación", fontweight='bold')
-plt.xlabel("Nº de registros", fontweight='bold')
+# === Gráfico de barras horizontal por estado (ajustado) ===
+y_pos = np.arange(len(resumen_estado)) * 0.2  # menor separación vertical
+plt.figure(figsize=(4.5,4))  # más estrecho
 
+bars = plt.barh(y_pos, resumen_estado['Cantidad'], height=0.15, align='center', color="#4c72b0")
+
+# Etiquetas del eje Y con mayor tamaño y en negrita
+plt.yticks(y_pos, [estado_abrev.get(e, e) for e in resumen_estado['Estado']], fontsize=11, fontweight='bold')
+
+# Eliminamos el título
+# plt.title("Distribución por estado de asignación", fontweight='bold')
+
+# Etiquetas de cantidad y porcentaje dentro de las barras con mayor tamaño
 for i, (cantidad, porcentaje, estado) in enumerate(zip(resumen_estado['Cantidad'], resumen_estado['Porcentaje'], resumen_estado['Estado'])):
     label = f"{cantidad} ({porcentaje:.1f}%)"
     y = y_pos[i]
     if estado in ["Asignada Vía", "Asignada Vía Alternativa"]:
-        plt.text(cantidad * 0.98, y, label, ha='right', va='center', fontsize=9, fontweight='bold', color="white", fontname='DejaVu Sans')
+        plt.text(cantidad * 0.98, y, label, ha='right', va='center',
+                 fontsize=11, fontweight='bold', color="white", fontname='DejaVu Sans')
     else:
-        plt.text(cantidad + max(resumen_estado['Cantidad']) * 0.01, y, label, va='center', fontsize=9, fontweight='bold', color="dimgray", fontname='DejaVu Sans')
+        plt.text(cantidad + max(resumen_estado['Cantidad']) * 0.01, y, label,
+                 va='center', fontsize=11, fontweight='bold', color="dimgray", fontname='DejaVu Sans')
 
 plt.gca().invert_yaxis()
 plt.tight_layout()
+
+# Guardar gráfico en SVG y PNG con fondo transparente
+plt.savefig("grafico_estado.svg", format="svg", transparent=True)
 grafico_path = "grafico_estado.png"
-plt.savefig(grafico_path)
+plt.savefig(grafico_path, format="png", transparent=True)
 plt.close()
+
 
 # === Exportar a Excel ===
 output_file = "resumen_resultados.xlsx"
@@ -136,7 +156,7 @@ with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
     resumen_estado.to_excel(writer, sheet_name="Por Estado", index=False)
     tabla_municipio_estado.to_excel(writer, sheet_name="Por Municipio", index=False)
 
-# Añadir hoja con gráfico
+# Añadir hoja con gráfico (PNG)
 wb = load_workbook(output_file)
 ws = wb.create_sheet(title="Gráfico Estado")
 img = Image(grafico_path)
@@ -146,4 +166,3 @@ wb.save(output_file)
 
 print(f"Resumen exportado a {output_file} con tabla y gráfico incluidos.")
 print(tabla_municipio_estado)
-

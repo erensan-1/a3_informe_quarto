@@ -365,9 +365,6 @@ for codmun, nombre in municipios.items():
     for idx, row in vc_con_pob.iterrows():
         if pd.notna(row['cunn_1']):
             df_vc.at[idx, 'cod_pob'] = row['cunn_1']
-
-# Corregir formato de cvia_ine
-df_vc['cvia_ine'] = df_vc['cvia_ine'].apply(lambda x: str(x).zfill(5))
                 
 # CORREGIR FORMATO CODVIA
 df_vc['cvia_ine'] = df_vc['cvia_ine'].apply(lambda x: str(x).zfill(5))

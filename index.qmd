@@ -1,0 +1,1139 @@
+---
+title: "Metodología empleada para la resolución de la Tarea A3 'Vías sin código de vía INE'"
+jupyter: python3
+
+author:
+  - name: "*Enrique Reñé Sánchez (Técnico SIG)*"
+    affiliations: 
+      - ref: grafcan
+  - name: "*Cristian González Alonso (Ingeniero de datos)*"
+  - name: "*Juan Jorge Rosales León (Dirección técnica)*"
+
+affiliations:
+  - id: grafcan
+    name: "![GRAFCAN Logo](mapas/GRAFCANa_logo_color.png){width=1in}"
+
+project: "Tenerife Padrón 2.0 (Cabildo Tenerife) - Padrón Online (INE)"
+
+date: "2025-09-25"
+date-format: long
+nocite: |
+  @*
+  
+title-block-banner: "mapas/FONDO_IT_1.png"
+
+format:
+  html:
+    html-table-processing: none
+    css: styles.css
+    toc: true
+    toc-title: Tabla de contenidos
+    toc-location: left
+    toc-expand: 3
+    toc-depth: 4
+    number-sections: true
+    number-depth: 4
+    page-layout: full
+    embed-resources: false
+    editor: visual
+
+crossref:
+  fig-title: 'Figura'
+  fig-prefix: 'figura'
+  tbl-title: 'Tabla'
+  tbl-prefix: 'tabla'
+  sec-prefix: 'apartado'
+---
+
+```{python}
+#| echo: false
+import yaml
+from IPython.display import display, HTML
+
+# Leer YAML del archivo (solo la cabecera)
+with open(r"C:\padron\data\vscode\padron_online\A1\a1_informe.qmd", "r", encoding="utf-8") as f:
+    lines = f.readlines()
+
+start = lines.index('---\n') + 1
+end = lines.index('---\n', start)
+yaml_text = "".join(lines[start:end])
+header = yaml.safe_load(yaml_text)
+
+# Crear un bloque HTML tipo tarjeta con Bootstrap
+display(HTML(f'''
+<div class="card mb-3" style="padding:10px; background-color:#f8f9fa; border-left: 5px solid #09488bff;">
+  <strong>Proyecto:</strong> {header.get('project','')}
+</div>
+'''))
+```
+
+Mediante la Orden TER/1235/2023 (E2025001009), el Cabildo de Tenerife encarga a Cartográfica de Canarias S.A. (GRAFCAN) la ejecución de tareas de análisis y depuración del padrón de municipios de menos de 20.000 habitantes, en el marco del proyecto *TenerifePadrón 2.0*, encuadrado a su vez en la iniciativa *Padrón Online* del INE.
+
+# Resumen {#sec-resumen}
+
+Este documento describe la metodología empleada para la resolución de la Tarea A3 ('Registros del fichero de Viviendas sin código de vía INE'), que consiste en la asignación de código de vía en formato INE (cvia_ine en adelante) para aquellas viviendas no principales cuya vía catastral no se ha podido identificar en el callejero del censo electoral.
+
+La aproximación se centra en la asignación de cvia_ine (o código de unidad poblacional en su defecto, tal y como recoge la [Guía Técnica de Subvenciones](mapas/Guia_Tecnica_de_Subvenciones.pdf){target="_blank"}), mediante ubicación espacial de la vivienda y análisis de vecindad con cartografía de portales o vías del callejero de SITCAN, así como cartografía de unidades poblacionales. Además de la asignación de cvia_ine o código de unidad poblacional (UP en adelante), se clasifican los registros de acuerdo a su emparejamiento en base a las descripciones de su dirección.
+
+Dada la variedad en los formatos de nomenclatura y la incompletitud de las descripciones, se ha optado por emplear métodos de emparejamiento basados en heurística y machine learning para determinar si la dirección de ambas fuentes hace referencia a la misma localización. La utilidad de esto último radica en la capacidad de discernir aquellas vías con nombres alternativos o vías existentes en SITCAN pero no recogidas por el INE que proponen para darse de alta por parte de los ayuntamientos.
+
+Los resultados muestran un **88,48% de asignación** de 'cvia_ine' a nivel global tras la comparación con la fuente de datos de portales y vías recogidas en el callejero de SITCAN. El residuo se reparte en un 10,76% de viviendas propuesta para asignar nueva vía (existe en callejero pero no en el INE), un 0,52% de viviendas aisladas y un 0,22% a las que únicamente se le ha podido asignar código UP, ambas por falta de vías cercanas existentes.
+
+El desarrollo y resultados de los trabajos se plasman en el presente informe, así como en el [atlas](mapas/A3_Atlas.pdf){target="_blank"} o el [visor](https://erensan-1.github.io/a3_visor/){target="_blank"} que muestra la distribución espacial de las viviendas para cada municipio.
+
+## Información de partida y análisis exploratorio
+
+La información proporcionada por el INE es la siguiente:
+
+-   *Registros afectados del fichero de viviendas con dirección catastral (VCppmmml.023)*
+
+Este fichero contiene un total de 14.723 registros repartidos en 913 vías, la situación de partida por municipios se muestra en la siguiente tabla:
+
+```{python}
+#| echo: false
+import pandas as pd
+from IPython.display import display, HTML
+
+# Cargar Excel
+df = pd.read_excel("a3_diagnostico.xlsx", sheet_name="resumen_municipio")
+
+# Calcular mitad de filas
+mid = len(df) // 2
+
+df1 = df.iloc[:mid, :]
+df2 = df.iloc[mid:, :]
+
+# Generar HTML de las dos tablas
+html_tablas = f"""
+<div style="display: flex; justify-content: space-between; gap: 20px;">
+  <div style="flex: 1;">{df1.to_html(index=False, escape=False)}</div>
+  <div style="flex: 1;">{df2.to_html(index=False, escape=False)}</div>
+</div>
+"""
+
+display(HTML(html_tablas))
+```
+
+## Fuentes de datos empleadas
+
+El análisis espacial se realizó comparando con las siguientes fuentes de información:
+
+-   **Callejero del SITCAN** (Sistema de Información Territorial de Canarias): gestionado y mantenido por GRAFCAN, constituye la base oficial de referencia para la red viaria de Canarias. Se ha utilizado la cartografía de portales y vías de callejero.
+
+-   **Poblaciones**: base de datos con información georreferenciada de poblaciones publicada por el Instituto Geográfico Nacional (IGN). Si bien
+
+    ::: callout-note
+    La práctica totalidad de las asignaciones de cvia_ine se recuperaron mediante la vía espacial frente a callejero, dado que en la mayoría de los casos existían portales en la misma parcela que contenía la vivienda o vías cercanas a la misma. Tan sólo una pequeña proporción de viviendas tienen como única asignación el código UP, tras incapacidad de asociar cvia_ine. No obstante, como información adicional se ha recuperado el código UP para todos los registros siempre que no fuera nulo.
+    :::
+
+# Flujo metodológico
+
+La asignación de código a cada vivienda se desarrolla en una secuencia de etapas, resumidas a continuación para proporcionar una visión global del proceso:
+
+1.  **Preparación del entorno:**
+
+    -   Importación de librerías para manejo de datos (`pandas`, `geopandas`, `sqlalchemy`), geoprocesamiento (`shapely`), coincidencia difusa (`rapidfuzz`) y conexión a PostgreSQL/PostGIS.
+
+    -   Definición de diccionarios de normalización: equivalencias oficiales de siglas para desabreviación, casos de abreviación detectados manualmente y diccionario de municipios.
+
+2.  **Carga de datos**: conexión a la base de datos para obtener los registros y las fuentes a comparar (portales y vías del callejero SITCAN, parcelas catastrales y unidades poblacionales).
+
+3.  **Normalización y limpieza**: para mejorar la capacidad de emparejamiento se aplican una serie de funciones de preprocesamiento (conversión a mayúsculas, eliminación de acentos y carácteres especiales, separación de sufijos y prefijos, etc). Dicho proceso se aplica tanto al registro procedente del fichero VC como al de la fuente contra la que se compara.
+
+4.  **Entrenamiento del modelo** de Machine Learning para el emparejamiento de las direcciones:
+
+    -   Se calculan distintas métricas de similitud que serán las variables de entrada como *fuzz ratio*, *partial ratio*, *token sort ratio*, *token set ratio*, *Wratio*, *length difference*, *first token equal* y *last token equal*. Se puede consultar el significado de cada métrica [aquí](https://rapidfuzz.github.io/RapidFuzz/Usage/fuzz.html){target="_blank"}.
+
+    -   Se entrena un modelo **Random Forest** usando un dataset de validación manual, se evalúa su desempeño con métricas de clasificación y se analiza la importancia de las variables.
+
+    -   Se combina este clasificador con un filtro heurístico previo que asigna como emparejamiento aquellas comparaciones cuyo WRatio sea mayor de 95% y no emparejados aquellas comparaciones cuyo valor sea menor al 60%.
+
+5.  **Asignación de código (cvia_ine o UP)**:
+
+    Para el conjunto de las 14.273 viviendas se itera sobre cada registro filtrando por municipio y se establece un orden de prioridad para la asignación de cvia_ine o UP, así como el etiquetado según su estado:
+
+    1.  **Vivienda contenida en una parcela donde existe portal**: si existe coincidencia espacial de una vivienda y un portal dentro de una misma parcela catastral, se asigna el cvia_ine de portal a la vivienda.
+
+    2.  **Vivienda con vías cercanas**: cuando no se da el primer supuesto, se buscan las vías cercanas contenidas en un buffer de 100 m y se asigna el cvia_ine de aquella con una mayor similitud de emparejamiento (se aplica el modelo de machine learning).
+
+    3.  **Viviendas aisladas**: si no existen vías en un radio de 100 m, se asigna el cvia_ine correspondiente a la vía más cercana.
+
+    Cada asignación incluye información sobre el origen y método de asignación o la métrica de probabilidad estimada por el modelo, así como otros metadatos recogidos en nuevas columnas.
+
+    ::: callout-note
+    Independientemente de la asignación de cvia_ine, se recupera el código de unidad poblacional siempre que la vivienda exista dentro de la geometría de unidades poblacionales y esta contenga un código no nulo.
+    :::
+
+    Dado que aquellos cvia_ine con codificación superior a 90.000 se corresponden con vías recogidas en callejero pero inexistentes en la base de datos del INE, dichas vías se identifican como posibles nuevas altas a proponer por los ayuntamientos, recibiendo la etiqueta 'Asignar Vía Nueva'. La lógica seguida para el etiquetado de cada registros se muestra en la siguiente imagen:
+
+![](images/A3_estado_v2.drawio-3.png){style="display:block; margin-left:auto; margin-right:auto; width:700px;"}
+
+6.  **Postprocesado y exportación de resultados**: se corrigen formatos y se exportan resultados a Excel y CSV.
+
+7.  **Resumen final de asignaciones**: se imprime un conteo de viviendas en cada estado y el total de registros procesados.
+
+8.  **Ficheros de salida**:
+
+    Tras la asignación de cvia_ine o UP a los registros y su marcaje de propuesta para vías de nueva alta a los ayuntamiento, se generan los siguientes archivos de salida de acuerdo con la estructura de datos establecida en a [Guía Técnica de Subvenciones](mapas/Guia_Tecnica_de_Subvenciones.pdf){target="_blank"}:
+
+    -   *VCppmmmA.023: registros afectados del fichero de viviendas con dirección catastral y código de vía del callejero de censo electoral.*
+
+    ::: callout-note
+    De forma complementaria se muestra las definciones del etiquetado empleado de manera interna para controlar la calidad de los datos:
+
+    ```{python}
+    #| echo: false
+    import pandas as pd
+    from IPython.display import HTML
+
+    # Crear DataFrame con la información
+    df_codigos = pd.DataFrame({
+        "Código": [1, 2, 3, 4, 5, 6, 7],
+        "Estado": [
+            "A3_NoAplicable",
+            "A3_Pendiente",
+            "A3_AsignadaVia",
+            "A3_AsignadaViaAlternativa",
+            "A3_AsignadaUnidadPoblacional",
+            "A3_AsignarViaNueva",
+            "A3_Aislada"
+        ],
+        "Descripción": [
+            "Vivienda principal o registro no afectado por A3.",
+            "Registro pendiente de procesamiento.",
+            "Vivienda con vía asignada (cvia_ine válido) por coincidencia en la dirección de portal o vía próxima.",
+            "Vivienda con vía alternativa asignada (cvia_ine válido) por proximidad pero sin coincidencia en la dirección de portal o vía próxima.",
+            "Vivienda sin cvia_ine asignado por falta de cvia_ine o falta de vecindad, pero con pertenencia a una Unidad Poblacional.",
+            "Vivienda inexistente en el INE (sin cvia_ine o descripción no coincidente) pero recogida en el callejero de SITCAN que se propone como nueva alta para el ayuntamiento.",
+            "Vivienda sin cvia_ine asignado por falta de vecindad a portales o vías y sin pertenencia a una Unidad Poblacional. Se le asigna el cvia_ine de la vía más próxima."
+        ]
+    })
+
+    # Renderizar como tabla HTML con id para CSS
+    HTML(df_codigos.to_html(index=False, table_id="tabla_codigos"))
+    ```
+    :::
+
+## Preparación del entorno
+
+Carga de librerías necesarias:
+
+```{python}
+#| eval: false
+#| code-fold: true
+# === LIBRERÍAS NECESARIAS ===
+import pandas as pd
+import geopandas as gpd
+import random
+import unicodedata
+from rapidfuzz import process, fuzz
+from sqlalchemy import create_engine
+from tqdm import tqdm
+from shapely import make_valid
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
+```
+
+Carga de datos:
+
+```{python}
+#| eval: false
+#| code-fold: true
+# === CONEXIÓN A LA BASE DE DATOS ===
+print("Conectando a la base de datos...")
+DB_URI = "postgresql+psycopg2://erensan:5eP79ECt@192.168.21.226:5432/padron_online"
+engine = create_engine(DB_URI)
+
+# === CARGA DE DATOS ===
+df_vv = gpd.read_postgis("SELECT * FROM trabajo.vivienda", engine, geom_col='geom', crs='EPSG:4326')
+print("Total viviendas cargadas:", len(df_vv))
+
+df_vc = df_vv[df_vv['cvia_ine'] == 0].copy()
+print("Viviendas con cvia_ine == 0:", len(df_vc))
+
+df_callejero_num = gpd.read_postgis("SELECT * FROM grafcan.callejero_num", engine, geom_col='geom', crs='EPSG:4326')
+print("Portales cargados:", len(df_callejero_num))
+
+df_callejero_via = gpd.read_postgis("SELECT * FROM grafcan.callejero_via", engine, geom_col='geom', crs='EPSG:4326')
+print("Vías cargadas:", len(df_callejero_via))
+
+df_parcela = gpd.read_postgis("SELECT * FROM catastro.parcela WHERE tipo != 'X'", engine, geom_col='geom', crs='EPSG:4326')
+print("Parcelas cargadas (tipo distinto de 'X'):", len(df_parcela))
+
+df_poblaciones = gpd.read_postgis("SELECT * FROM age.poblaciones", engine, geom_col='geom', crs='EPSG:4326' )
+print("Poblaciones cargadas:", len(df_poblaciones))
+```
+
+Inicializar campos auxiliares:
+
+```{python}
+#| eval: false
+#| code-fold: true
+# === INICIALIZAR CAMPOS AUXILIARES ===
+df_vc['cvia_ine'] = ''
+df_vc['a3_estado'] = ''
+df_vc['a3_origen'] = ''
+df_vc['a3_metodo'] = ''
+df_vc['a3_uuid'] = ''
+df_vc['cod_pob'] = ''
+df_vc['predict_proba'] = None
+df_vc['direccion_norm_vc'] = ''
+df_vc['direccion_norm_callejero'] = ''
+```
+
+Diccionario de abreviaciones:
+
+```{python}
+#| eval: false
+#| code-fold: true
+# === DICCIONARIO DE SIGLAS DE VÍA ===
+SIGLAS_VIA = {
+    'AL': 'ALAMEDA', 'AD': 'ALDEA', 'AP': 'APARTAMENTOS', 'AY': 'ARROYO', 'AV': 'AVENIDA',
+    'BJ': 'BAJADA', 'BR': 'BARRANCO', 'BO': 'BARRIO', 'BL': 'BLOQUE', 'CL': 'CALLE',
+    'CJ': 'CALLEJA', 'CM': 'CAMINO', 'CR': 'CARRERA', 'CS': 'CASERIO', 'CH': 'CHALET',
+    'CO': 'COLONIA', 'CN': 'COSTANILLA', 'CT': 'CARRETERA', 'CU': 'CUESTA', 'ED': 'EDIFICIO',
+    'EL': 'ESCALINATA', 'ES': 'ESCALERA', 'GL': 'GLORIETA', 'GR': 'GRUPO', 'LG': 'LUGAR',
+    'MC': 'MERCADO', 'MN': 'MUNICIPIO', 'MZ': 'MANZANA', 'PA': 'PASEO ALTO', 'PB': 'POBLADO',
+    'PD': 'PASADIZO', 'PJ': 'PASAJE', 'PL': 'PLACETA', 'PO': 'PASEO BAJO', 'PP': 'PASEO',
+    'PQ': 'PARQUE', 'PR': 'PORTALES', 'PS': 'PASO', 'PT': 'PATIO', 'PU': 'PLAZUELA',
+    'PZ': 'PLAZA', 'RA': 'RAMAL', 'RB': 'RAMBLA', 'RC': 'RINCONADA', 'RD': 'RONDA',
+    'RP': 'RAMPA', 'RR': 'RIBERA', 'SC': 'SECTOR', 'SD': 'SENDA', 'SU': 'SUBIDA',
+    'TO': 'TORRE', 'TR': 'TRAVESÍA', 'UR': 'URBANIZACIÓN', 'URB': 'URBANIZACIÓN', 'VI': 'VÍA', 'ZO': 'ZONA',
+    'AVDA': 'AVENIDA', 'CTRA': 'CARRETERA', 'CLLON': 'CALLEJON', 'TRVA': 'TRAVESIA',
+    'CMNO': 'CAMINO', 'PSAJE': 'PASAJE', 'BRANC': 'BARRANCO', 'PZTA': 'PLAZOLETA',
+    'POLIG': 'POLIGONO', 'BARDA': 'BARRIADA', 'TRVAL': 'TRASVERSAL', 'ACCES': 'ACCESO',
+    'CZDA': 'CALZADA', 'CZADA': 'CALZADA', 'VREDA': 'VEREDA', 'PG':'POLIGONO', 'FCO RGUEZ': 'FRANCISCO RODRIGUEZ'
+}
+```
+
+Diccionario de municipios:
+
+```{python}
+#| eval: false
+#| code-fold: true
+# === DICCIONARIO DE MUNICIPIOS ===
+municipios = {
+    "38004": "Arafo",
+    "38005": "Arico",
+    "38010": "Buenavista del Norte",
+    "38012": "Fasnia",
+    "38015": "Garachico",
+    "38018": "Guancha, La",
+    "38025": "Matanza de Acentejo, La",
+    "38032": "Rosario, El",
+    "38034": "San Juan de la Rambla",
+    "38039": "Santa Úrsula",
+    "38040": "Santiago del Teide",
+    "38041": "Sauzal, El",
+    "38042": "Silos, Los",
+    "38044": "Tanque, El",
+    "38046": "Tegueste",
+    "38051": "Victoria de Acentejo, La",
+    "38052": "Vilaflor de Chasna"
+}
+```
+
+## Normalización
+
+Definición de funciones de limpieza y normalización de las direcciones:
+
+```{python}
+#| eval: false
+# === FUNCIONES AUXILIARES ===
+def limpiar_texto(texto):
+    if not isinstance(texto, str):
+        texto = str(texto)
+    texto = texto.upper().strip()
+    texto = unicodedata.normalize('NFKD', texto)
+    return ''.join(c for c in texto if not unicodedata.combining(c))
+
+def normalizar_via_nombre(tvia, nvia):
+    tvia_raw = SIGLAS_VIA.get(str(tvia).strip().upper(), str(tvia))
+    tvia_norm = limpiar_texto(tvia_raw)
+    nvia_norm = limpiar_texto(nvia)
+    return f"{tvia_norm} {nvia_norm}"
+
+def corregir_geoms(gdf, nombre):
+    print(f" - {nombre} inicial: {len(gdf)}")
+    gdf['geom'] = gdf['geom'].apply(lambda g: make_valid(g) if g is not None else None)
+    gdf = gdf[gdf.is_valid & ~gdf.is_empty]
+    print(f" - {nombre} válidas: {len(gdf)}")
+    return gdf
+```
+
+Aplicación de funciones de normalización y corrección de geometrías:
+
+```{python}
+#| eval: false
+# === NORMALIZACIÓN ===
+print("Normalizando nombres de vías...")
+df_vc['direccion_norm'] = df_vc.apply(lambda r: normalizar_via_nombre(r['tvia_dgc'], r['nvia_dgc']), axis=1)
+df_callejero_num['direccion_norm'] = df_callejero_num.apply(lambda r: normalizar_via_nombre(r['tipovia'], r['nombrevia']), axis=1)
+df_callejero_via['direccion_norm'] = df_callejero_via.apply(lambda r: normalizar_via_nombre(r['tipovia'], r['nombrevia']), axis=1)
+
+print("Corrigiendo geometrías...")
+df_vc = corregir_geoms(df_vc, "Viviendas")
+df_parcela = corregir_geoms(df_parcela, "Parcelas")
+df_callejero_num = corregir_geoms(df_callejero_num, "Portales")
+df_callejero_via = corregir_geoms(df_callejero_via, "Vías")
+
+```
+
+## Modelo machine learning para clasificación de emparejamientos
+
+### Entrenamiento del modelo Random Forest
+
+La muestra de los 177 registros a los que se les ha realizado validación manual y se han proporcionado como verdad terreno para entrenar al modelo se puede [descargar aquí](mapas/muestra_match_manual.xlsx).
+
+```{python}
+#| eval: false
+#| code-fold: true
+# === ENTRENAR MODELO RF CON VALIDACIÓN ===
+print("Entrenando clasificador ML...")
+
+def compute_features(vc, callejero):
+    return {
+        "ratio": fuzz.ratio(vc, callejero),
+        "partial_ratio": fuzz.partial_ratio(vc, callejero),
+        "token_sort_ratio": fuzz.token_sort_ratio(vc, callejero),
+        "token_set_ratio": fuzz.token_set_ratio(vc, callejero),
+        "wratio": fuzz.WRatio(vc, callejero),
+        "len_diff": abs(len(vc) - len(callejero)),
+        "first_token_equal": int(vc.split()[0] == callejero.split()[0]) if vc and callejero else 0,
+        "last_token_equal": int(vc.split()[-1] == callejero.split()[-1]) if vc and callejero else 0,
+    }
+
+# Cargar excel con validación manual
+df_test = pd.read_excel("sample_direcciones_para_match_manual.xlsx")
+
+feature_rows = []
+labels = []
+for _, row in df_test.iterrows():
+    if pd.isna(row['match_manual']):
+        continue
+    # Asegurarse de que las direcciones no sean nulas
+    direccion_vc = str(row['direccion_norm_vc']) if pd.notna(row['direccion_norm_vc']) else ""
+    direccion_callejero = str(row['direccion_norm_callejero']) if pd.notna(row['direccion_norm_callejero']) else ""
+    feats = compute_features(direccion_vc, direccion_callejero)
+    feature_rows.append(feats)
+    labels.append(int(row['match_manual']))
+
+X = pd.DataFrame(feature_rows)
+y = pd.Series(labels)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+clf = RandomForestClassifier(
+    n_estimators=200,
+    random_state=42,
+    class_weight="balanced"
+)
+clf.fit(X_train, y_train)
+```
+
+### Evaluación del modelo
+
+```{python}
+#| eval: false
+#| code-fold: true
+# === Evaluación del modelo ===
+print("=== Evaluación del modelo ===")
+y_pred = clf.predict(X_test)
+print(classification_report(y_test, y_pred))
+print("Matriz de confusión:")
+print(confusion_matrix(y_test, y_pred))
+
+# === Importancia de cada variable ===
+feature_importances = pd.DataFrame({
+    'feature': X.columns,
+    'importance': clf.feature_importances_
+}).sort_values(by='importance', ascending=False)
+
+print("\n=== Importancia de las variables ===")
+print(feature_importances)
+
+# Gráfico de importancia
+import matplotlib.pyplot as plt
+plt.figure(figsize=(10,6))
+plt.barh(feature_importances['feature'], feature_importances['importance'])
+plt.gca().invert_yaxis()  # Mostrar la más importante arriba
+plt.title("Importancia de cada variable en el Random Forest")
+plt.xlabel("Importancia")
+plt.show()
+```
+
+## Asignación de código (CVIA_INE o UP)
+
+### Filtro heurístico
+
+```{python}
+#| eval: false
+def filtro_heuristico(vc, callejero):
+    tsr_set = fuzz.token_set_ratio(vc, callejero)
+    wr = fuzz.WRatio(vc, callejero)
+    if tsr_set >= 95:
+        return 1
+    elif wr < 60:
+        return 0
+    else:
+        return None
+
+def decidir_match(vc, callejero, clf=clf):
+    h = filtro_heuristico(vc, callejero)
+    if h is not None:
+        return h
+    feats = pd.DataFrame([compute_features(vc, callejero)])
+    return int(clf.predict(feats)[0])
+```
+
+### Bucle principal de asignación y etiquetado
+
+```{python}
+#| eval: false
+#| code-fold: true
+# === PROCESAR MUNICIPIO POR MUNICIPIO === 
+for codmun, nombre in municipios.items():
+    print(f"\nProcesando municipio {nombre} ({codmun})...")
+    mun_id = int(codmun[-2:])
+
+    df_vc_mun = df_vc[df_vc['cmun_ine'].astype(int) == mun_id].copy()
+    df_parcela_mun = df_parcela[df_parcela['municipio'].astype(int) == mun_id].copy()
+    df_callejero_num_mun = df_callejero_num[df_callejero_num['codmun'].astype(str).str[-2:].astype(int) == mun_id].copy()
+    df_callejero_via_mun = df_callejero_via[df_callejero_via['codmun'].astype(str).str[-2:].astype(int) == mun_id].copy()
+    df_poblaciones_mun = df_poblaciones.copy()
+
+    if df_vc_mun.empty:
+        print("  No hay viviendas para este municipio.")
+        continue
+
+    vc_parcela = gpd.sjoin(
+        df_vc_mun,
+        df_parcela_mun[['refcat', 'geom']],
+        how="left",
+        predicate="within"
+    )
+
+    for idx, row in tqdm(vc_parcela.iterrows(), total=vc_parcela.shape[0], desc=f"Procesando {nombre}"):
+        refcat = row['refcat']
+        geom_vc = row['geom']
+        df_vc.at[idx, 'direccion_norm_vc'] = row['direccion_norm']
+
+        # ==============================
+        # PRIORIDAD 1: PORTALES EN LA PARCELA
+        # ==============================
+        if pd.notna(refcat):
+            parcela_geom = df_parcela_mun.loc[df_parcela_mun['refcat'] == refcat, 'geom'].iloc[0]
+            cn_candidatos = df_callejero_num_mun[df_callejero_num_mun.within(parcela_geom)]
+        else:
+            cn_candidatos = gpd.GeoDataFrame(columns=df_callejero_num_mun.columns, geometry='geom', crs=df_callejero_num_mun.crs)
+
+        if not cn_candidatos.empty:
+            matches = process.extractOne(row['direccion_norm'], cn_candidatos['direccion_norm'].tolist(), scorer=fuzz.WRatio)
+            if matches:
+                match_name = matches[0]
+                feats = pd.DataFrame([compute_features(row['direccion_norm'], match_name)])
+                proba = clf.predict_proba(feats)[0][1]
+                df_vc.at[idx, 'predict_proba'] = proba
+
+                match_label = decidir_match(row['direccion_norm'], match_name, clf)
+                codvia = cn_candidatos.loc[cn_candidatos['direccion_norm'] == match_name, 'codvia'].iloc[0]
+                uuid_match = cn_candidatos.loc[cn_candidatos['direccion_norm'] == match_name, 'uuid'].iloc[0]
+
+                df_vc.at[idx, 'cvia_ine'] = codvia
+                df_vc.at[idx, 'a3_origen'] = 'callejero_num'
+                df_vc.at[idx, 'direccion_norm_callejero'] = match_name
+                df_vc.at[idx, 'a3_metodo'] = 'heurística' if filtro_heuristico(row['direccion_norm'], match_name) is not None else 'random_forest'
+                df_vc.at[idx, 'a3_uuid'] = uuid_match
+
+                if "NONE" in str(row['direccion_norm']) or "NONE" in str(match_name):
+                    df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaViaAlternativa'
+                else:
+                    df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaVia' if match_label == 1 else 'A3_AsignadaViaAlternativa'
+
+                if int(codvia) > 90000:
+                    df_vc.at[idx, 'a3_estado'] = 'A3_AsignarViaNueva'
+
+
+        # ==============================
+        # PRIORIDAD 2: VÍAS CERCANAS
+        # ==============================
+        elif True:
+            buffer_geom = geom_vc.buffer(100)
+            vias_cercanas = df_callejero_via_mun[df_callejero_via_mun.intersects(buffer_geom)]
+            if not vias_cercanas.empty:
+                matches = process.extractOne(row['direccion_norm'], vias_cercanas['direccion_norm'].tolist(), scorer=fuzz.WRatio)
+                if matches:
+                    match_name = matches[0]
+                    feats = pd.DataFrame([compute_features(row['direccion_norm'], match_name)])
+                    proba = clf.predict_proba(feats)[0][1]
+                    df_vc.at[idx, 'predict_proba'] = proba
+
+                    match_label = decidir_match(row['direccion_norm'], match_name, clf)
+                    codvia = vias_cercanas.loc[vias_cercanas['direccion_norm'] == match_name, 'codvia'].iloc[0]
+                    uuid_match = vias_cercanas.loc[vias_cercanas['direccion_norm'] == match_name, 'uuid'].iloc[0]
+
+                    df_vc.at[idx, 'cvia_ine'] = codvia
+                    df_vc.at[idx, 'a3_origen'] = 'callejero_via'
+                    df_vc.at[idx, 'direccion_norm_callejero'] = match_name
+                    df_vc.at[idx, 'a3_metodo'] = 'heurística' if filtro_heuristico(row['direccion_norm'], match_name) is not None else 'random_forest'
+                    df_vc.at[idx, 'a3_uuid'] = uuid_match
+
+                    if "NONE" in str(row['direccion_norm']) or "NONE" in str(match_name):
+                        df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaViaAlternativa'
+                    else:
+                        df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaVia' if match_label == 1 else 'A3_AsignadaViaAlternativa'
+
+                    if int(codvia) > 90000:
+                        df_vc.at[idx, 'a3_estado'] = 'A3_AsignarViaNueva'
+
+        # ==============================
+        # PRIORIDAD 3: VIVIENDA AISLADA
+        # ==============================
+        if pd.isna(df_vc.at[idx, 'a3_estado']) or df_vc.at[idx, 'a3_estado'] == '':
+            gdf_row = gpd.GeoDataFrame([row], geometry='geom', crs=df_vc.crs)
+
+            # Buscar vía más cercana
+            nearest = gpd.sjoin_nearest(
+                gdf_row,
+                df_callejero_via_mun[['geom','codvia','uuid']],
+                how='left',
+                rsuffix='_right'
+            )
+
+            # Detectar columnas candidatas
+            uuid_candidates = [c for c in nearest.columns if c.startswith("uuid")]
+            codvia_candidates = [c for c in nearest.columns if c.startswith("codvia")]
+
+            uuid_col = uuid_candidates[0] if uuid_candidates else None
+            codvia_col = codvia_candidates[0] if codvia_candidates else None
+
+            # Asignar siempre cvia_ine y uuid si existe algo en nearest
+            if not nearest.empty and uuid_col and codvia_col:
+                df_vc.at[idx, 'cvia_ine'] = nearest[codvia_col].iloc[0]
+                df_vc.at[idx, 'a3_uuid'] = nearest[uuid_col].iloc[0]
+
+            # Intentar asignar unidad poblacional
+            df_poblaciones_clean = df_poblaciones_mun[['cunn_1','geom']].copy()
+            poblacion = gpd.sjoin(
+                gdf_row,
+                df_poblaciones_clean,
+                how='left',
+                predicate='within',
+                rsuffix='_pob'
+            )
+
+            if not poblacion.empty and pd.notna(poblacion['cunn_1'].iloc[0]):
+                df_vc.at[idx, 'cod_pob'] = poblacion['cunn_1'].iloc[0]
+                df_vc.at[idx, 'a3_estado'] = 'A3_AsignadaUnidadPoblacional'
+            else:
+                df_vc.at[idx, 'a3_estado'] = 'A3_Aislada'
+
+            # Asignar metadatos
+            df_vc.at[idx, 'a3_origen'] = 'callejero_via'
+            df_vc.at[idx, 'direccion_norm_callejero'] = '' if nearest.empty else df_vc.at[idx, 'direccion_norm_callejero']
+            df_vc.at[idx, 'a3_metodo'] = 'random_forest'
+```
+
+### Asignación universal de código de UP
+
+```{python}
+#| eval: false
+    df_poblaciones_clean = df_poblaciones_mun[['cunn_1', 'geom']].copy()
+    vc_con_pob = gpd.sjoin(
+        df_vc_mun,
+        df_poblaciones_clean,
+        how="left",
+        predicate="within",
+        rsuffix="_pob"
+    )
+    for idx, row in vc_con_pob.iterrows():
+        if pd.notna(row['cunn_1']):
+            df_vc.at[idx, 'cod_pob'] = row['cunn_1']
+```
+
+## Postprocesado y exportación
+
+```{python}
+#| eval: false
+# CORREGIR FORMATO CODVIA
+df_vc['cvia_ine'] = df_vc['cvia_ine'].apply(lambda x: str(x).zfill(5))
+
+df_vc.loc[(df_vc["direccion_norm_vc"].str.contains("NONE", na=False) |
+     df_vc["direccion_norm_callejero"].str.contains("NONE", na=False)) & (df_vc["a3_estado"] == "Asignada"),
+    "a3_estado"] = "AsignadaViaAlternativa"
+
+# EXPORTAR
+for col in ['uuid', 'direccion_norm']:
+    if col in df_vc.columns:
+        df_vc = df_vc.drop(columns=[col])
+
+print("Exportando resultados a Excel y CSV...")
+df_vc.to_excel("a3_asignaciones_vc.xlsx", index=False)
+df_vc.to_csv("a3_asignaciones_vc.csv", index=False)
+```
+
+## Resumen de asignaciones
+
+```{python}
+#| eval: false
+print("=== RESUMEN DE ASIGNACIONES ===")
+estados = [
+    'A3_AsignadaVia',
+    'A3_AsignadaViaAlternativa',
+    'A3_AsignadaUnidadPoblacional',
+    'A3_AsignarViaNueva',
+    'A3_Aislada']
+for estado in estados:
+    count = df_vc[df_vc['a3_estado'] == estado].shape[0]
+    print(f"{estado}: {count} registros")
+print(f"Total registros procesados: {len(df_vc)}")
+```
+
+# Resultados
+
+En términos generales, se ha conseguido la asignación del cvia_ine para la mayoría de registros del fichero VC, y se confirma que el modelo de machine learning para el emparejamiento de direcciones tiene una buena precisión.
+
+El 67% de las asignaciones se han recuperado a través la capa de portales, mientras que la recuperación desde la capa de vías supone un 33%. Asimismo, un 68% de los registros han recibido el emparejamiento a través del filtro heurístico, mientras que el modelo Random Forest ha operado sobre los 4.747 registros restantes (32%).
+
+A continuación se realiza un análisis de los resultados y se visualizan espacialmente en formato atlas y en visor.
+
+## Evaluación del modelo Random Forest
+
+De acuerdo con el informe de la clasificación, el modelo predice correctamente ambas clases (binario de verdad o falso de emparejamiento), con una precisión global del 94% (34 de 36 casos).
+
+```{python}
+#| echo: false
+from IPython.display import HTML
+import pandas as pd
+
+# Ejemplo de métricas como DataFrame
+df_metricas = pd.DataFrame({
+    "Clase": [0, 1, "Accuracy", "Macro avg", "Weighted avg"],
+    "Precision": [0.95, 0.93, 0.94, 0.94, 0.94],
+    "Recall": [0.95, 0.93, "-", 0.94, 0.94],
+    "F1-score": [0.95, 0.93, "-", 0.94, 0.94],
+    "Support": [21, 15, 36, 36, 36]
+})
+
+# Mostrar como tabla HTML con id para CSS
+HTML(df_metricas.to_html(index=False, table_id="tabla_metricas"))
+```
+
+La matriz de confusión solo muestra un error de asignación por clase (habiendo utilizado 36 de los 177 registros para su evaluación), por lo que confirma la buena precisión del modelo.
+
+```{python}
+#| echo: false
+from IPython.display import HTML
+import pandas as pd
+
+# Matriz de confusión como DataFrame
+df_confusion = pd.DataFrame(
+    [[20, 1],
+     [1, 14]],
+    columns=["Pred_0", "Pred_1"],
+    index=["Real_0", "Real_1"]
+)
+
+# Mostrar como tabla HTML con id para aplicar CSS
+HTML(df_confusion.to_html(table_id="tabla_confusion"))
+```
+
+Las variables token_set_ratio (mide similitud ingorando palabras repetidas o extra), token_sort_ratio (mide similitud ignorando el orden de las palabras) y ratio (captura similitud literal completa) tienen el mayor impacto en las predicciones, mientras que variables como len_diff o last_token_equal tienen baja influencia.
+
+```{python}
+#| echo: false
+import pandas as pd
+from IPython.display import HTML
+
+data = [
+    ("token_set_ratio", 0.197),
+    ("token_sort_ratio", 0.192),
+    ("ratio", 0.154),
+    ("partial_ratio", 0.124),
+    ("wratio", 0.116),
+    ("first_token_equal", 0.095),
+    ("last_token_equal", 0.061),
+    ("len_diff", 0.061)
+]
+
+df = pd.DataFrame(data, columns=["Variable", "Importancia"])
+
+# Crear doble columna
+left = df.iloc[:len(df)//2].reset_index(drop=True)
+right = df.iloc[len(df)//2:].reset_index(drop=True)
+df_doble = pd.concat([left, right], axis=1)
+df_doble.columns = ["Variable", "Importancia", "Variable", "Importancia"]
+
+HTML(df_doble.to_html(index=False, table_id="tabla_importancia"))
+```
+
+## Distribución general y por municipio
+
+Se ha conseguido la asignación del cvia_ine para el **88,48 %** del total de registros del fichero VC, mientras que un 0,52% ha recibido un cvia_ine de la vía más próxima por tratarse de una vivienda aislada y un 0,22% ha recibido únicamente el código de unidad poblacional al no contar con vinculación a cvia_ine posible.
+
+```{python}
+#| echo: false
+import pandas as pd
+from IPython.display import HTML
+
+# Cargar Excel
+df = pd.read_excel("resumen_resultados.xlsx", sheet_name="Por Estado")
+
+# Formatear columnas
+df["Cantidad"] = df["Cantidad"].astype(int)          # Enteros
+df["Porcentaje"] = df["Porcentaje"].map("{:.2f}%".format)  # Dos decimales con %
+
+# Renderizar HTML sin índice y con ancho ajustado
+HTML(df.to_html(index=False, table_id="tabla_resultados"))
+```
+
+Analizando la distribución por municipio, se comprueba que en la mayoría de caso la categoría 'Asignada Vía Alternativa' es la más frecuente, indicando que se consigue asignar cvia_ine pero sin coincidencia en la dirección de la vía.
+
+Por otro lado, la categoría 'Asignada Vía' varía mucho entre municipios, desde valores bajos (Fasnia 16,9%) hasta muy altos (Santiago del Teide 84,3%), lo que es indicativo del grado de completitud de las direcciones o de capacidad de cada ayuntamiento para mantener su callejero con datos actualizados.
+
+Las categorías de asignación UP o viviendas aisladas representan porcentajes muy bajos para todos los municipios, por lo que constituyen situaciones poco frecuentes.
+
+```{python}
+#| echo: false
+import pandas as pd
+from IPython.display import HTML
+
+# Cargar Excel
+df = pd.read_excel("resumen_resultados.xlsx", sheet_name="Por Municipio")
+df = df.drop(columns=['Código'])
+
+# Renderizar HTML sin índice y con ancho ajustado
+HTML(df.to_html(index=False, table_id="tabla_resultados_mun"))
+```
+
+## Productos cartográficos
+
+A continuación, se muestra la distribución espacial de las viviendas asignadas a través de una serie de mapas con datos relevantes, así como un visor para una visualización más interactiva que permite explorar zonas con más detalle:
+
+::: panel-tabset
+### Arafo
+
+![](mapas/Arafo.png){style="max-width:100%; max-height:80vh;"}
+
+### Arico
+
+![](mapas/Arico.png){style="max-width:100%; max-height:80vh;"}
+
+### Buenavista del Norte
+
+![](mapas/Buenavista%20del%20Norte.png){style="max-width:100%; max-height:80vh;"}
+
+### El Rosario
+
+![](mapas/El%20Rosario.png){style="max-width:100%; max-height:80vh;"}
+
+### El Sauzal
+
+![](mapas/El%20Sauzal.png){style="max-width:100%; max-height:80vh;"}
+
+### El Tanque
+
+![](mapas/El%20Tanque.png){style="max-width:100%; max-height:80vh;"}
+
+### Fasnia
+
+![](mapas/Fasnia.png){style="max-width:100%; max-height:80vh;"}
+
+### Garachico
+
+![](mapas/Garachico.png){style="max-width:100%; max-height:80vh;"}
+
+### La Guancha
+
+![](mapas/La%20Guancha.png){style="max-width:100%; max-height:80vh;"}
+
+### La Matanza de Acentejo
+
+![](mapas/La%20Matanza%20de%20Acentejo.png){style="max-width:100%; max-height:80vh;"}
+
+### La Victoria de Acentejo
+
+![](mapas/La%20Victoria%20de%20Acentejo.png){style="max-width:100%; max-height:80vh;"}
+
+### Los Silos
+
+![](mapas/Los%20Silos.png){style="max-width:100%; max-height:80vh;"}
+
+### San Juan de la Rambla
+
+![](mapas/San%20Juan%20de%20la%20Rambla.png){style="max-width:100%; max-height:80vh;"}
+
+### Santiago del Teide
+
+![](mapas/Santiago%20del%20Teide.png){style="max-width:100%; max-height:80vh;"}
+
+### Tegueste
+
+![](mapas/Tegueste.png){style="max-width:100%; max-height:80vh;"}
+
+### Vilaflor
+
+![](mapas/Vilaflor.png){style="max-width:100%; max-height:80vh;"}
+:::
+
+## Visor
+
+<iframe src="https://erensan-1.github.io/a3_visor/" width="100%" height="600px" style="border:none;">
+
+</iframe>
+
+# Análisis del residuo
+
+Un **10,77%** de las viviendas están asociadas a vías encontradas en el callejero de SITCAN que no están recogidas por el INE (codificación SITCAN \> 90.000), por lo que se trata de supuestos que se presentan como irresolubles para la tarea actual. Las vías a las que se asociarían dichas viviendas no existen actualmente en la base de datos del INE y por tanto requerirían de nueva alta por parte del ayuntamiento correspondiente.
+
+![](mapas/A3_vias_90000.png)
+
+El porcentaje de registros de viviendas a resolver que presentan esta casuística varía notablemente para cada municipio:
+
+```{python}
+#| echo: false
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Diccionario de códigos de municipio a nombre
+municipios = {
+    "4": "Arafo",
+    "5": "Arico",
+    "10": "Buenavista del Norte",
+    "12": "Fasnia",
+    "15": "Garachico",
+    "18": "La Guancha",
+    "25": "La Matanza de Acentejo",
+    "32": "El Rosario",
+    "34": "San Juan de la Rambla",
+    "39": "Santa Úrsula",
+    "40": "Santiago del Teide",
+    "41": "El Sauzal",
+    "42": "Los Silos",
+    "44": "El Tanque",
+    "46": "Tegueste",
+    "51": "La Victoria de Acentejo",
+    "52": "Vilaflor de Chasna"
+}
+
+# Leer Excel
+df_vias = pd.read_excel("a3_asignaciones_vc.xlsx")
+
+# Mapear códigos de municipio a nombre
+df_vias['Municipio'] = df_vias['cmun_ine'].astype(str).map(municipios)
+
+# Filtrar filas válidas
+df_vias = df_vias[df_vias['Municipio'].notna()]
+
+# Contar registros (viviendas) con estado 'Asignar Vía Nueva'
+df_asignar = df_vias[df_vias['a3_estado'] == 'A3_AsignarViaNueva']
+viviendas_por_municipio = df_asignar.groupby('Municipio')['cvia_ine'].count().reset_index()
+viviendas_por_municipio.columns = ['Municipio', 'Asignar_Via_Nueva']
+
+# Contar total de registros (viviendas) por municipio
+total_viviendas = df_vias.groupby('Municipio')['cvia_ine'].count().reset_index()
+total_viviendas.columns = ['Municipio', 'Total']
+
+# Unir y calcular porcentaje
+df = pd.merge(viviendas_por_municipio, total_viviendas, on='Municipio')
+df['Porcentaje'] = df['Asignar_Via_Nueva'] / df['Total'] * 100
+
+# Ordenar de mayor a menor porcentaje
+df = df.sort_values(by="Porcentaje", ascending=False)
+
+# Gráfico vertical
+fig, ax = plt.subplots(figsize=(11,5))
+bars = ax.bar(df["Municipio"], df["Porcentaje"], color="skyblue")
+
+# Etiquetas encima de cada barra con el número de registros (viviendas)
+for bar, cant in zip(bars, df["Asignar_Via_Nueva"]):
+    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5, f"{cant}",
+            ha="center", va="bottom", fontsize=10)
+
+# Configurar eje X
+ax.set_xticks(range(len(df["Municipio"])))
+ax.set_xticklabels(df["Municipio"], rotation=45, ha="right")
+ax.set_xlabel("")
+
+# Renombrar eje Y
+ax.set_ylabel("Nº viviendas etiquetadas 'Asignar Vía Nueva' (%)")
+
+# Líneas horizontales
+ax.yaxis.grid(True, color='gray', linestyle='--', linewidth=0.5, alpha=0.7)
+
+# Reducir márgenes horizontales
+ax.set_xlim(-0.5, len(df["Municipio"]) - 0.5)
+
+# Fijar límite superior del eje Y en 50%
+ax.set_ylim(0, 50)
+
+plt.tight_layout()
+plt.show()
+
+```
+
+No obstante, dichas viviendas se reparten entre un número distinto de vías según cada municipio. Así pues, municipios con ayuntamientos pequeños y un componente alto de ruralidad y diseminación como El Tanque, Fasnia o Vilaflor de Chasna, muestran porcentajes más altos de vías sin codificar que municipios como Tegueste, Santiago del Teide o La Victoria de Acentejo, cuya menor dispersión poblacional presumiblemente favorece una mejor y más actualizada cobertura territorial.
+
+```{python}
+#| echo: false
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Diccionario de códigos de municipio a nombre
+municipios = {
+    "4": "Arafo",
+    "5": "Arico",
+    "10": "Buenavista del Norte",
+    "12": "Fasnia",
+    "15": "Garachico",
+    "18": "La Guancha",
+    "25": "La Matanza de Acentejo",
+    "32": "El Rosario",
+    "34": "San Juan de la Rambla",
+    "39": "Santa Úrsula",
+    "40": "Santiago del Teide",
+    "41": "El Sauzal",
+    "42": "Los Silos",
+    "44": "El Tanque",
+    "46": "Tegueste",
+    "51": "La Victoria de Acentejo",
+    "52": "Vilaflor de Chasna"
+}
+
+# Leer Excel
+df_vias = pd.read_excel("a3_asignaciones_vc.xlsx")
+
+# Mapear códigos de municipio a nombre
+df_vias['Municipio'] = df_vias['cmun_ine'].astype(str).map(municipios)
+
+# Filtrar filas válidas
+df_vias = df_vias[df_vias['Municipio'].notna()]
+
+# ---- Total de vías únicas por municipio ----
+vias_totales = df_vias.groupby('Municipio')['cvia_ine'].nunique().reset_index()
+vias_totales.columns = ['Municipio', 'Total']
+
+# ---- Vías únicas con estado 'A3_AsignarViaNueva' ----
+vias_asignar = df_vias[df_vias['a3_estado'] == 'A3_AsignarViaNueva']
+vias_por_municipio = vias_asignar.groupby('Municipio')['cvia_ine'].nunique().reset_index()
+vias_por_municipio.columns = ['Municipio', 'Asignar_Via_Nueva']
+
+# ---- Unir y calcular porcentaje ----
+df = pd.merge(vias_por_municipio, vias_totales, on='Municipio', how='right').fillna(0)
+df['Porcentaje'] = df['Asignar_Via_Nueva'] / df['Total'] * 100
+
+# Ordenar de mayor a menor porcentaje
+df = df.sort_values(by='Porcentaje', ascending=False)
+
+# ---- Gráfico vertical ----
+fig, ax = plt.subplots(figsize=(11,5))
+bars = ax.bar(df['Municipio'], df['Porcentaje'], color='skyblue')
+
+# Etiquetas encima de cada barra con la cantidad de vías filtradas
+for bar, cant in zip(bars, df['Asignar_Via_Nueva']):
+    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5, f"{int(cant)}",
+            ha='center', va='bottom', fontsize=10)
+
+# Configuración de ejes
+ax.set_xticks(range(len(df['Municipio'])))
+ax.set_xticklabels(df['Municipio'], rotation=45, ha='right')
+ax.set_xlabel('')
+ax.set_ylabel("Nº vías etiquetadas 'Asignar Vía Nueva' (%)")
+
+# Límite superior del eje Y
+ax.set_ylim(0, 65)
+
+# Líneas horizontales
+ax.yaxis.grid(True, color='gray', linestyle='--', linewidth=0.5, alpha=0.7)
+
+# Reducir márgenes horizontales
+ax.set_xlim(-0.5, len(df['Municipio']) - 0.5)
+
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| echo: false
+import pandas as pd
+from IPython.display import display, HTML
+
+# Diccionario de códigos de municipio a nombre
+municipios = {
+    "4": "Arafo",
+    "5": "Arico",
+    "10": "Buenavista del Norte",
+    "12": "Fasnia",
+    "15": "Garachico",
+    "18": "La Guancha",
+    "25": "La Matanza de Acentejo",
+    "32": "El Rosario",
+    "34": "San Juan de la Rambla",
+    "39": "Santa Úrsula",
+    "40": "Santiago del Teide",
+    "41": "El Sauzal",
+    "42": "Los Silos",
+    "44": "El Tanque",
+    "46": "Tegueste",
+    "51": "La Victoria de Acentejo",
+    "52": "Vilaflor de Chasna"
+}
+
+# Leer Excel
+df_vias = pd.read_excel("a3_asignaciones_vc.xlsx")
+
+# Mapear códigos de municipio a nombre
+df_vias['Municipio'] = df_vias['cmun_ine'].astype(str).map(municipios)
+
+# Filtrar filas válidas
+df_vias = df_vias[df_vias['Municipio'].notna()]
+
+# ---- Filtrar registros con estado 'A3_AsignarViaNueva' ----
+df_filtrado = df_vias[df_vias['a3_estado'] == 'A3_AsignarViaNueva']
+
+# ---- Crear listado de vías únicas por municipio ----
+vias_unicas = (
+    df_filtrado.assign(Via=df_filtrado['tvia_dgc'].astype(str) + " " + df_filtrado['nvia_dgc'].astype(str))
+    .drop_duplicates(subset=['Municipio', 'cvia_ine'])  # único por municipio
+    [['cvia_ine', 'Via', 'Municipio']]
+    .reset_index(drop=True)
+)
+
+# ---- Resumen por municipio ----
+# Viviendas (todos los registros filtrados)
+viviendas_muni = df_filtrado.groupby('Municipio')['cvia_ine'].count().reset_index()
+viviendas_muni.columns = ['Municipio', 'Num_Viviendas']
+
+# Vías únicas por municipio usando el mismo criterio que Vias_Unicas
+vias_muni = vias_unicas.groupby('Municipio')['Via'].count().reset_index()
+vias_muni.columns = ['Municipio', 'Num_Vias']
+
+# Merge para hoja resumen
+resumen = pd.merge(viviendas_muni, vias_muni, on='Municipio', how='outer').fillna(0)
+
+# Añadir fila de totales
+totales = pd.DataFrame({
+    "Municipio": ["TOTAL"],
+    "Num_Viviendas": [resumen['Num_Viviendas'].sum()],
+    "Num_Vias": [resumen['Num_Vias'].sum()]
+})
+resumen = pd.concat([resumen, totales], ignore_index=True)
+
+# ---- Guardar en Excel ----
+output_file = "vias_90000.xlsx"
+with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+    df_filtrado.to_excel(writer, sheet_name="Viviendas", index=False)
+    vias_unicas.to_excel(writer, sheet_name="Vias_Unicas", index=False)
+    resumen.to_excel(writer, sheet_name="Resumen", index=False)
+
+# Mostrar enlace de descarga en Quarto
+display(HTML(f"<p>El subconjunto de viviendas con estado 'A3_AsignarViaNueva' y sus vías se puede descargar <a href='{output_file}' download>aquí</a>.</p>"))
+```
+
+Por otro lado, analizando las 10 direcciones con más registros, se constata la existencia de direcciones con difícil emparejamiento (pese a tener cvia_ine asignable por la vía espacial), como son 'PROC. SIMPLIFICADO', 'DS DISEMINADOS' o 'DS DISEMINADO', cuya suma asciende a 919 registros.
+
+La suma de todos los registros cuya descripción hace referencia a las descripciones mencionadas o a un diseminado genérico (ej: DS GENOVES) asciende a más de 2000 registros. Esto último ha de tenerse en cuenta dado que limita la capacidad de emparejamiento literal o difuso de las descripciones, pese a que se haya resuelto la asignación de cvia_ine por la vía espacial.

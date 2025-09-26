@@ -1,0 +1,188 @@
+p {
+  text-align: justify;
+}
+
+p, li {
+  text-align: justify;
+}
+
+/* Primera columna: encabezado normal, registros en gris y negrita */
+.table th:nth-child(1) {
+    position: sticky;
+    left: 0;
+    background-color: white;
+    z-index: 1;
+    font-weight: bold;   /* negrita para encabezado */
+    color: black;        /* color del encabezado */
+}
+
+.table td:nth-child(1) {
+    background-color: #f0f0f0; /* gris claro para registros */
+    font-weight: bold;          /* negrita */
+    color: #555;                /* gris oscuro */
+}
+
+/* Reducir tamaño de fuente y evitar saltos de línea */
+.table th, .table td {
+    font-size: 0.75rem;    /* más pequeña para compactar */
+    white-space: nowrap;    /* evita que el texto se divida en varias líneas */
+}
+
+/* Opcional: scroll horizontal si la tabla es muy ancha */
+.table-responsive {
+    overflow-x: auto;
+}
+
+/* Solo afecta a la tabla con id 'tabla_no_asignados' */
+#tabla_no_asignados {
+    width: auto;           /* ancho según contenido */
+    max-width: 800px;      /* ancho máximo */
+    table-layout: auto;    /* columnas se ajustan al contenido */
+    margin: 20px auto;     /* centrada horizontalmente con espacio arriba/abajo */
+}
+
+#tabla_no_asignados th,
+#tabla_no_asignados td {
+    padding: 6px 12px;     /* padding ajustado */
+    text-align: left;
+}
+
+#tabla_no_asignados caption {
+    caption-side: bottom;  /* pone la leyenda debajo */
+    text-align: left;       /* opcional, para alinearla al inicio */
+    font-style: italic;     /* opcional, estilo de leyenda */
+    margin-top: 4px;
+}
+
+#tabla_diagnostico {
+    width: auto;           /* ancho según contenido */
+    max-width: 800px;      /* ancho máximo */
+    table-layout: auto;    /* columnas se ajustan al contenido */
+    margin: 20px auto;     /* centrada horizontalmente con espacio arriba/abajo */
+}
+
+#tabla_importancia {
+  width: auto !important;        /* ajusta al contenido */
+  table-layout: auto !important; /* deja que el navegador ajuste */
+  margin-left: auto;
+  margin-right: auto;            /* centrada */
+  font-size: 0.8rem;             /* fuente un poco más pequeña */
+  border-collapse: collapse;     /* bordes más compactos */
+}
+
+#tabla_importancia th,
+#tabla_importancia td {
+  padding: 6px 12px;             /* espacio interno equilibrado */
+  white-space: nowrap;           /* evita saltos de línea */
+}
+
+/* Variables a la izquierda */
+#tabla_importancia th:nth-child(1),
+#tabla_importancia th:nth-child(3),
+#tabla_importancia td:nth-child(1),
+#tabla_importancia td:nth-child(3) {
+  text-align: left;
+  font-weight: bold;
+  color: #333;
+}
+
+/* Importancias al centro */
+#tabla_importancia th:nth-child(2),
+#tabla_importancia th:nth-child(4),
+#tabla_importancia td:nth-child(2),
+#tabla_importancia td:nth-child(4) {
+  text-align: center;
+}
+
+/* Variables (col 1 y 3) con fondo gris */
+#tabla_importancia td:nth-child(1),
+#tabla_importancia td:nth-child(3) {
+    background-color: #f0f0f0;  /* gris claro */
+    font-weight: bold;
+    color: #333;
+}
+
+
+
+#tabla_confusion {
+    table-layout: auto;    /* Columnas se ajustan al contenido */
+    width: auto;           /* No ocupa todo el ancho */
+}
+
+#tabla_confusion th,
+#tabla_confusion td {
+    white-space: nowrap;   /* Evita que el texto se divida en varias líneas */
+    padding: 6px 12px;    /* Ajusta el padding */
+    text-align: center;    /* Centrar los números */
+}
+
+#tabla_confusion {
+    table-layout: auto;    /* Columnas se ajustan al contenido */
+    width: auto;           /* No ocupa todo el ancho */
+    margin-left: auto;     /* Centra horizontalmente */
+    margin-right: auto;
+    margin-top: 20px;      /* opcional: espacio arriba */
+    margin-bottom: 20px;   /* opcional: espacio abajo */
+}
+
+#tabla_metricas.table {
+  width: auto !important;
+  table-layout: auto !important;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
+#tabla_metricas.table th:first-child,
+#tabla_metricas.table td:first-child {
+  text-align: left;   /* La primera columna (Clase) alineada a la izquierda */
+}
+
+#tabla_resultados {
+    width: auto;          /* ancho según contenido */
+    table-layout: auto;   /* columnas ajustadas al contenido */
+    margin-left: auto;    /* centrar horizontalmente */
+    margin-right: auto;
+}
+
+#tabla_resultados th, 
+#tabla_resultados td {
+    white-space: nowrap;  /* evitar que se divida el texto */
+    padding: 6px 12px;
+    text-align: left;
+}
+
+#tabla_resultados_mun {
+    width: auto;          /* ancho según contenido */
+    table-layout: auto;   /* columnas ajustadas al contenido */
+    margin-left: auto;    /* centrar horizontalmente */
+    margin-right: auto;
+}
+
+#tabla_resultados_mun th, 
+#tabla_resultados_mun td {
+    white-space: nowrap;  /* evitar que se divida el texto */
+    padding: 6px 12px;
+    text-align: left;
+}
+
+#tabla_codigos {
+    width: auto;             /* Ajusta columnas al contenido */
+    table-layout: auto;
+    margin-left: auto;
+    margin-right: auto;      /* Centrada */
+    font-size: 0.85rem;
+}
+
+#tabla_codigos th, #tabla_codigos td {
+    padding: 6px 12px;
+    white-space: normal;     /* Permite que la descripción se ajuste y no se corte */
+    text-align: left;
+}
+
+#tabla_codigos th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+}
+
+
