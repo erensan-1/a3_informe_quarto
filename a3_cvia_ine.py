@@ -39,7 +39,7 @@ df_poblaciones = gpd.read_postgis("SELECT * FROM age.poblaciones", engine, geom_
 print("Poblaciones cargadas:", len(df_poblaciones))
 
 # === INICIALIZAR CAMPOS AUXILIARES ===
-df_vc['cvia_ine'] = ''
+df_vc['a3_cvia_ine'] = ''
 df_vc['a3_estado'] = ''
 df_vc['a3_origen'] = ''
 df_vc['a3_metodo'] = ''
@@ -256,7 +256,7 @@ for codmun, nombre in municipios.items():
                 codvia = cn_candidatos.loc[cn_candidatos['direccion_norm'] == match_name, 'codvia'].iloc[0]
                 uuid_match = cn_candidatos.loc[cn_candidatos['direccion_norm'] == match_name, 'uuid'].iloc[0]
 
-                df_vc.at[idx, 'cvia_ine'] = codvia
+                df_vc.at[idx, 'a3_cvia_ine'] = codvia
                 df_vc.at[idx, 'a3_origen'] = 'callejero_num'
                 df_vc.at[idx, 'direccion_norm_callejero'] = match_name
                 df_vc.at[idx, 'a3_metodo'] = 'heurística' if filtro_heuristico(row['direccion_norm'], match_name) is not None else 'random_forest'
@@ -289,7 +289,7 @@ for codmun, nombre in municipios.items():
                     codvia = vias_cercanas.loc[vias_cercanas['direccion_norm'] == match_name, 'codvia'].iloc[0]
                     uuid_match = vias_cercanas.loc[vias_cercanas['direccion_norm'] == match_name, 'uuid'].iloc[0]
 
-                    df_vc.at[idx, 'cvia_ine'] = codvia
+                    df_vc.at[idx, 'a3_cvia_ine'] = codvia
                     df_vc.at[idx, 'a3_origen'] = 'callejero_via'
                     df_vc.at[idx, 'direccion_norm_callejero'] = match_name
                     df_vc.at[idx, 'a3_metodo'] = 'heurística' if filtro_heuristico(row['direccion_norm'], match_name) is not None else 'random_forest'
@@ -326,7 +326,7 @@ for codmun, nombre in municipios.items():
 
             # 👉 Asignar siempre cvia_ine y uuid si existe algo en nearest
             if not nearest.empty and uuid_col and codvia_col:
-                df_vc.at[idx, 'cvia_ine'] = nearest[codvia_col].iloc[0]
+                df_vc.at[idx, 'a3_cvia_ine'] = nearest[codvia_col].iloc[0]
                 df_vc.at[idx, 'a3_uuid'] = nearest[uuid_col].iloc[0]
 
             # 2️⃣ Intentar asignar unidad poblacional
@@ -367,7 +367,7 @@ for codmun, nombre in municipios.items():
             df_vc.at[idx, 'cod_pob'] = row['cunn_1']
                 
 # CORREGIR FORMATO CODVIA
-df_vc['cvia_ine'] = df_vc['cvia_ine'].apply(lambda x: str(x).zfill(5))
+df_vc['a3_cvia_ine'] = df_vc['a3_cvia_ine'].apply(lambda x: str(x).zfill(5))
 
 df_vc.loc[
     (
